@@ -1218,6 +1218,8 @@ dependencies = [
  "hyper",
  "hyper-tls",
  "oauth2",
+ "serde",
+ "serde_json",
  "tokio",
  "url",
 ]

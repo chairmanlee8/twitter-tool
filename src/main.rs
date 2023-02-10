@@ -11,6 +11,7 @@ use oauth2::{
 use std::env;
 use tokio::io::{stdout, AsyncWriteExt as _};
 use url::Url;
+use twitter_tool_rs::{TwitterResponse, TwitterUser};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -79,9 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     println!("Response: {}", resp.status());
 
-    while let Some(chunk) = resp.body_mut().data().await {
-        stdout().write_all(&chunk?).await?;
-    }
+    let resp = hyper::body::to_bytes(resp.into_body()).await?;
+    let twitter_user: TwitterResponse<TwitterUser> = serde_json::from_slice(&resp)?;
+
+    println!("{twitter_user:?}");
 
     Ok(())
 }
