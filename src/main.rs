@@ -1,7 +1,9 @@
 use dotenvy::dotenv;
+use governor::{Quota, RateLimiter};
 use hyper::body::HttpBody as _;
 use hyper::{Body, Client, Method, Request};
 use hyper_tls::HttpsConnector;
+use nonzero_ext::*;
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
@@ -9,9 +11,10 @@ use oauth2::{
     Scope, TokenResponse, TokenUrl,
 };
 use std::env;
+use std::num::NonZeroU32;
 use tokio::io::{stdout, AsyncWriteExt as _};
+use twitter_tool_rs::{Tweet, TwitterResponse, TwitterUser};
 use url::Url;
-use twitter_tool_rs::{TwitterResponse, TwitterUser};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -74,7 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let req = Request::builder()
         .method(Method::GET)
         .uri("https://api.twitter.com/2/users/me")
-        .header("Authorization", format!("Bearer {}", token_result.access_token().secret()))
+        .header(
+            "Authorization",
+            format!("Bearer {}", token_result.access_token().secret()),
+        )
         .body(Body::empty())?;
     let mut resp = client.request(req).await?;
 
@@ -84,6 +90,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let twitter_user: TwitterResponse<TwitterUser> = serde_json::from_slice(&resp)?;
 
     println!("{twitter_user:?}");
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "https://api.twitter.com/2/users/{}/timelines/reverse_chronological?tweet.fields=created_at",
+            twitter_user.data.id
+        ))
+        .header(
+            "Authorization",
+            format!("Bearer {}", token_result.access_token().secret()),
+        )
+        .header("User-Agent", "sentiment-analysis-314159")
+        .body(Body::empty())?;
+    let mut resp = client.request(req).await?;
+
+    println!("Response: {}", resp.status());
+
+    let resp = hyper::body::to_bytes(resp.into_body()).await?;
+    let tweets: TwitterResponse<Vec<Tweet>> = serde_json::from_slice(&resp)?;
+
+    println!("{tweets:?}");
 
     Ok(())
 }
