@@ -1,0 +1,15 @@
+[package]
+name = "twitter-tool-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.69"
+dotenvy = "0.15.6"
+hyper = { version = "0.14", features = ["full"] }
+hyper-tls = "0.5.0"
+oauth2 = "4.3.0"
+tokio = { version = "1", features = ["full"] }
+url = "2.3.1"
