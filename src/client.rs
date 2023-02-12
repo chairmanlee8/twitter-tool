@@ -8,6 +8,8 @@ use oauth2::{
     AccessToken, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
     RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use url::Url;
@@ -112,7 +114,7 @@ impl TwitterClient {
 
         let resp = self.https_client.request(req).await?;
         let resp = hyper::body::to_bytes(resp.into_body()).await?;
-        let resp: api::Response<api::User> = serde_json::from_slice(&resp)?;
+        let resp: api::Response<api::User, ()> = serde_json::from_slice(&resp)?;
         Ok(resp.data)
     }
 
@@ -122,10 +124,13 @@ impl TwitterClient {
     ) -> Result<Vec<api::Tweet>, Box<dyn Error + Send + Sync>> {
         let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
 
-        let mut uri = Url::parse(&format!("https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological"))?;
+        let mut uri = Url::parse(&format!(
+            "https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological"
+        ))?;
         uri.query_pairs_mut()
             .append_pair("tweet.fields", "created_at")
-            .append_pair("user.fields", "username");
+            .append_pair("user.fields", "username")
+            .append_pair("expansions", "author_id");
 
         let req = Request::builder()
             .method(Method::GET)
@@ -133,9 +138,28 @@ impl TwitterClient {
             .header("Authorization", format!("Bearer {}", access_token.secret()))
             .body(Body::empty())?;
 
+        #[derive(Debug, Serialize, Deserialize)]
+        struct Includes {
+            users: Vec<api::User>,
+        }
+
         let resp = self.https_client.request(req).await?;
         let resp = hyper::body::to_bytes(resp.into_body()).await?;
-        let resp: api::Response<Vec<api::Tweet>> = serde_json::from_slice(&resp)?;
-        Ok(resp.data)
+        let resp: api::Response<Vec<api::Tweet>, Includes> = serde_json::from_slice(&resp)?;
+
+        let includes = resp.includes.ok_or("Expected `includes`")?;
+        let users: HashMap<String, String> = includes
+            .users
+            .iter()
+            .map(|user| (user.id.clone(), user.username.clone()))
+            .collect();
+
+        // CR: does Cow help here vs Clone?
+        let tweets: Vec<api::Tweet> = resp.data.iter().map(|tweet| api::Tweet {
+            author_username: users.get(&tweet.author_id).map(|username| username.clone()),
+            ..tweet.clone()
+        }).collect();
+
+        Ok(tweets)
     }
 }

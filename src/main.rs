@@ -1,7 +1,9 @@
 use clap::Parser;
+use ctrlc;
 use dotenvy::dotenv;
 use std::env;
 use twitter_tool_rs::client::TwitterClient;
+use twitter_tool_rs::ui;
 use twitter_tool_rs::ui::UI;
 
 #[derive(Parser, Debug)]
@@ -34,12 +36,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let my_timeline = twitter_client
         .timeline_reverse_chronological(&me.id)
         .await?;
-    println!("{my_timeline:?}");
 
-    // let mut ui = UI::new();
-    // ui.set_tweets(my_timeline);
-    // ui.show_tweets()?;
-    // ui.process_events_until_quit()?;
+    let mut ui = UI::new();
+    ui.set_tweets(my_timeline);
+    ui.show_tweets()?;
+    ui.process_events_until_quit()?;
 
     Ok(())
 }

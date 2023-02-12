@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Response<Data> {
+pub struct Response<Data, Includes> {
     pub data: Data,
+    pub includes: Option<Includes>,
     pub meta: Option<Meta>,
 }
 
@@ -21,9 +23,11 @@ pub struct User {
     pub username: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tweet {
     pub id: String,
     pub text: String,
     pub created_at: String,
+    pub author_id: String,
+    pub author_username: Option<String>,
 }
