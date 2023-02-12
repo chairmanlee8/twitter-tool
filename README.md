@@ -1,3 +1,6 @@
 # TODO
 
-- save oauth access token; re-auth after 403; maybe make a class for this
+- show timestamp (simple format for now, drop year for brevity)
+- side pane with full tweet expansion (incl. multiline)
+- for displaying tweets, prefix char (highlight for select, _^=reply, RT=retweet, QT=quote tweet)
+- space to expand reply, RT, QT inline
