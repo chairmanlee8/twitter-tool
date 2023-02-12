@@ -1,0 +1,119 @@
+use crate::api;
+use hyper::client::HttpConnector;
+use hyper::{Body, Client, Method, Request};
+use hyper_tls::HttpsConnector;
+use oauth2::basic::BasicClient;
+use oauth2::reqwest::async_http_client;
+use oauth2::{
+    AccessToken, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
+    RedirectUrl, Scope, TokenResponse, TokenUrl,
+};
+use std::error::Error;
+use url::Url;
+
+pub struct TwitterClient {
+    twitter_client_id: String,
+    twitter_client_secret: String,
+    access_token: Option<AccessToken>,
+    https_client: Client<HttpsConnector<HttpConnector>>,
+}
+
+impl TwitterClient {
+    pub fn new(twitter_client_id: &str, twitter_client_secret: &str) -> Self {
+        let https = HttpsConnector::new();
+        let https_client = Client::builder().build::<_, hyper::Body>(https);
+        Self {
+            twitter_client_id: twitter_client_id.to_string(),
+            twitter_client_secret: twitter_client_secret.to_string(),
+            access_token: None,
+            https_client,
+        }
+    }
+
+    // CR: type Error = Error + Send + Sync?
+    pub async fn authorize(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let oauth_client = BasicClient::new(
+            ClientId::new(self.twitter_client_id.clone()),
+            Some(ClientSecret::new(self.twitter_client_secret.clone())),
+            AuthUrl::new("https://twitter.com/i/oauth2/authorize".to_string())?,
+            Some(TokenUrl::new(
+                "https://api.twitter.com/2/oauth2/token".to_string(),
+            )?),
+        )
+        .set_redirect_uri(RedirectUrl::new("https://localhost:8080".to_string())?);
+        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+        let (auth_url, _csrf_token) = oauth_client
+            .authorize_url(CsrfToken::new_random)
+            .add_scope(Scope::new("tweet.read".to_string()))
+            .add_scope(Scope::new("users.read".to_string()))
+            .add_scope(Scope::new("offline.access".to_string()))
+            .set_pkce_challenge(pkce_challenge)
+            .url();
+
+        // User browses here to complete OAuth flow
+        println!("Browse to: {auth_url}");
+
+        let mut callback_url = String::new();
+        println!("Enter callback url:");
+        std::io::stdin().read_line(&mut callback_url)?;
+        let callback_url = Url::parse(&callback_url)?;
+
+        let mut expected_csrf_state = None;
+        let mut authorization_code = None;
+
+        for (key, value) in callback_url.query_pairs() {
+            if key == "state" {
+                expected_csrf_state = Some(String::from(value));
+            } else if key == "code" {
+                authorization_code = Some(String::from(value));
+            }
+        }
+
+        let _expected_csrf_state =
+            expected_csrf_state.ok_or("Missing `state` param from callback")?;
+        let authorization_code = authorization_code.ok_or("Missing `code` param from callback")?;
+
+        // Once the user has been redirected to the redirect URL, you'll have access to the
+        // authorization code. For security reasons, your code should verify that the `state`
+        // parameter returned by the server matches `csrf_state`.
+        let token_result = oauth_client
+            .exchange_code(AuthorizationCode::new(authorization_code))
+            .set_pkce_verifier(pkce_verifier)
+            .request_async(async_http_client)
+            .await?;
+
+        self.access_token = Some(token_result.access_token().clone());
+        Ok(())
+    }
+
+    pub async fn me(&self) -> Result<api::User, Box<dyn Error + Send + Sync>> {
+        let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("https://api.twitter.com/2/users/me")
+            .header("Authorization", format!("Bearer {}", access_token.secret()))
+            .body(Body::empty())?;
+
+        let resp = self.https_client.request(req).await?;
+        let resp = hyper::body::to_bytes(resp.into_body()).await?;
+        let resp: api::Response<api::User> = serde_json::from_slice(&resp)?;
+        Ok(resp.data)
+    }
+
+    pub async fn timeline_reverse_chronological(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<api::Tweet>, Box<dyn Error + Send + Sync>> {
+        let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological?tweet.fields=created_at"))
+            .header("Authorization", format!("Bearer {}", access_token.secret()))
+            .body(Body::empty())?;
+
+        let resp = self.https_client.request(req).await?;
+        let resp = hyper::body::to_bytes(resp.into_body()).await?;
+        let resp: api::Response<Vec<api::Tweet>> = serde_json::from_slice(&resp)?;
+        Ok(resp.data)
+    }
+}
