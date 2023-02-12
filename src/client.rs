@@ -9,6 +9,7 @@ use oauth2::{
     RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use std::error::Error;
+use std::fs;
 use url::Url;
 
 pub struct TwitterClient {
@@ -28,6 +29,21 @@ impl TwitterClient {
             access_token: None,
             https_client,
         }
+    }
+
+    pub fn save_access_token(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // CR: do we have to use serde_json, what about plain bytes
+        let access_token = self.access_token.as_ref().ok_or("No token to save")?;
+        let access_token = serde_json::to_string(&access_token)?;
+        fs::write("./var/.access_token", access_token)?;
+        Ok(())
+    }
+
+    pub fn load_access_token(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let access_token = fs::read_to_string("./var/.access_token")?;
+        let access_token = serde_json::from_str(&access_token)?;
+        self.access_token = Some(access_token);
+        Ok(())
     }
 
     // CR: type Error = Error + Send + Sync?
