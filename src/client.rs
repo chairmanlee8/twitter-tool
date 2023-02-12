@@ -121,9 +121,15 @@ impl TwitterClient {
         user_id: &str,
     ) -> Result<Vec<api::Tweet>, Box<dyn Error + Send + Sync>> {
         let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
+
+        let mut uri = Url::parse(&format!("https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological"))?;
+        uri.query_pairs_mut()
+            .append_pair("tweet.fields", "created_at")
+            .append_pair("user.fields", "username");
+
         let req = Request::builder()
             .method(Method::GET)
-            .uri(format!("https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological?tweet.fields=created_at"))
+            .uri(uri.to_string())
             .header("Authorization", format!("Bearer {}", access_token.secret()))
             .body(Body::empty())?;
 

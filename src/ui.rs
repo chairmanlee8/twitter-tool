@@ -1,0 +1,85 @@
+use crate::api::Tweet;
+use crossterm::style;
+use crossterm::terminal::{size, Clear, ClearType};
+use crossterm::{cursor, QueueableCommand};
+use crossterm::{
+    execute, queue,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+    Result,
+};
+use crossterm::event::{read, Event};
+use regex::Regex;
+use std::error::Error;
+use std::io::{stdout, Write};
+use unicode_truncate::UnicodeTruncateStr;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum UIMode {
+    Log,
+    Interactive,
+}
+
+pub struct UI {
+    mode: UIMode,
+    tweets: Vec<Tweet>,
+    tweets_view_offset: usize,
+}
+
+impl UI {
+    pub fn new() -> Self {
+        Self {
+            mode: UIMode::Log,
+            tweets: Vec::new(),
+            tweets_view_offset: 0,
+        }
+    }
+
+    fn set_mode(&mut self, mode: UIMode) -> Result<()> {
+        let prev_mode = self.mode;
+        self.mode = mode;
+
+        // CR: no automatic deref?
+        if prev_mode == UIMode::Log && mode == UIMode::Interactive {
+            execute!(stdout(), EnterAlternateScreen)?;
+        } else if prev_mode == UIMode::Interactive && mode == UIMode::Log {
+            execute!(stdout(), LeaveAlternateScreen)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn set_tweets(&mut self, tweets: Vec<Tweet>) {
+        self.tweets = tweets
+    }
+
+    pub fn show_tweets(&mut self) -> Result<()> {
+        self.set_mode(UIMode::Interactive)?;
+
+        let (cols, rows) = size()?;
+        let mut stdout = stdout();
+
+        execute!(stdout, Clear(ClearType::All))?;
+
+        let re_newlines = Regex::new("[\r\n]+").unwrap();
+
+        for i in 0..rows {
+            let tweet = &self.tweets[self.tweets_view_offset + (i as usize)];
+            let formatted = re_newlines.replace(&tweet.text, "⏎");
+            let (truncated, _) = formatted.unicode_truncate((cols - 1) as usize);
+            queue!(stdout, cursor::MoveTo(0, i))?;
+            queue!(stdout, style::Print(truncated))?;
+        }
+
+        stdout.flush()?;
+        Ok(())
+    }
+
+    pub fn process_events_until_quit(&self) -> Result<()> {
+        loop {
+            match read()? {
+                _ => ()
+            }
+        }
+        Ok(())
+    }
+}

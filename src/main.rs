@@ -2,12 +2,13 @@ use clap::Parser;
 use dotenvy::dotenv;
 use std::env;
 use twitter_tool_rs::client::TwitterClient;
+use twitter_tool_rs::ui::UI;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(short, long)]
-    login: bool
+    login: bool,
 }
 
 #[tokio::main]
@@ -34,6 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .timeline_reverse_chronological(&me.id)
         .await?;
     println!("{my_timeline:?}");
+
+    // let mut ui = UI::new();
+    // ui.set_tweets(my_timeline);
+    // ui.show_tweets()?;
+    // ui.process_events_until_quit()?;
 
     Ok(())
 }
