@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,7 +28,7 @@ pub struct User {
 pub struct Tweet {
     pub id: String,
     pub text: String,
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
     pub author_id: String,
     pub author_username: Option<String>,
 }
