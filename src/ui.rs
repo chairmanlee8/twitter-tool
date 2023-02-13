@@ -94,7 +94,7 @@ impl UI {
 
         queue!(stdout, Clear(ClearType::All))?;
 
-        let re_newlines = Regex::new("[\r\n]+").unwrap();
+        let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
 
         for i in 0..(rows - 2) {
@@ -122,7 +122,7 @@ impl UI {
             queue!(stdout, ResetColor)?;
             col_offset += (&tweet_author.len() + 1) as u16;
 
-            let formatted = re_newlines.replace(&tweet.text, "⏎ ");
+            let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
             let (truncated, _) = formatted.unicode_truncate((cols.saturating_sub(col_offset)) as usize);
             queue!(stdout, cursor::MoveTo(col_offset, i))?;
             queue!(stdout, style::Print(truncated))?;
@@ -194,4 +194,18 @@ impl UI {
 pub fn reset() {
     execute!(stdout(), LeaveAlternateScreen).unwrap();
     disable_raw_mode().unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_regex() {
+        let re_newlines = Regex::new(r"[\r\n]+").unwrap();
+        let str = "Detected new closed trade\n\nTrader: @Burgerinnn\nSymbol: $ETH\nPosition: short ↘\u{fe0f}\nEntry: 1 500.6\nExit: 1 498.2\nProfit: 3 994\nLeverage: 10x\n\nEntry, take profit, stats, leaderboard can be found at https://t.co/EFjrCz4DgD";
+        let result = re_newlines.replace_all(str, "⏎ ");
+        let expected = "Detected new closed trade⏎ Trader: @Burgerinnn⏎ Symbol: $ETH⏎ Position: short ↘\u{fe0f}⏎ Entry: 1 500.6⏎ Exit: 1 498.2⏎ Profit: 3 994⏎ Leverage: 10x⏎ Entry, take profit, stats, leaderboard can be found at https://t.co/EFjrCz4DgD";
+        assert_eq!(result, expected);
+    }
 }
