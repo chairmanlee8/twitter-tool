@@ -1,16 +1,18 @@
-use std::cmp::{max, min};
+mod bottom_bar;
+
 use crate::api::Tweet;
-use crossterm::event::{read, Event, KeyCode, KeyModifiers};
-use crossterm::style::{self, Stylize, Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
-use crossterm::terminal::{size, Clear, ClearType, enable_raw_mode, disable_raw_mode};
-use crossterm::{cursor, QueueableCommand};
+use crate::ui::bottom_bar::render_bottom_bar;
+use crossterm::cursor;
+use crossterm::event::{read, Event, KeyCode};
+use crossterm::style::{self, Color, ResetColor, SetForegroundColor};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
 use crossterm::{
     execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     Result,
 };
 use regex::Regex;
-use std::error::Error;
+use std::cmp::{max, min};
 use std::io::{stdout, Write};
 use unicode_truncate::UnicodeTruncateStr;
 
@@ -20,13 +22,19 @@ pub enum UIMode {
     Interactive,
 }
 
+pub struct Context {
+    pub screen_cols: u16,
+    pub screen_rows: u16,
+}
+
+// CR: should the UI really own state (tweets) here?  Seems like tweets should have a separate
+// state machine more connected to TwitterClient
 pub struct UI {
     mode: UIMode,
-    cols: u16,
-    rows: u16,
+    context: Context,
     tweets: Vec<Tweet>,
     tweets_view_offset: usize,
-    tweets_selected_index: usize
+    tweets_selected_index: usize,
 }
 
 impl UI {
@@ -35,11 +43,13 @@ impl UI {
 
         Self {
             mode: UIMode::Log,
-            cols,
-            rows,
+            context: Context {
+                screen_cols: cols,
+                screen_rows: rows,
+            },
             tweets: Vec::new(),
             tweets_view_offset: 0,
-            tweets_selected_index: 0
+            tweets_selected_index: 0,
         }
     }
 
@@ -68,7 +78,7 @@ impl UI {
         // CR: clamp?
         let new_index = max(0, min(new_index, self.tweets.len() - 1));
         let view_top = self.tweets_view_offset;
-        let view_height = (self.rows - 3) as usize;
+        let view_height = (self.context.screen_rows - 3) as usize;
         let view_bottom = self.tweets_view_offset + view_height;
 
         self.tweets_selected_index = new_index;
@@ -80,8 +90,14 @@ impl UI {
             self.tweets_view_offset = max(0, new_index - view_height);
             self.show_tweets()
         } else {
-            self.render_status_bar()?;
-            execute!(stdout(), cursor::MoveTo(16, (self.tweets_selected_index - self.tweets_view_offset) as u16))
+            render_bottom_bar(&self.context, &self.tweets, self.tweets_selected_index)?;
+            execute!(
+                stdout(),
+                cursor::MoveTo(
+                    16,
+                    (self.tweets_selected_index - self.tweets_view_offset) as u16
+                )
+            )
         }
     }
 
@@ -89,7 +105,6 @@ impl UI {
     pub fn show_tweets(&mut self) -> Result<()> {
         self.set_mode(UIMode::Interactive)?;
 
-        let (cols, rows) = size()?;
         let mut stdout = stdout();
 
         queue!(stdout, Clear(ClearType::All))?;
@@ -97,7 +112,7 @@ impl UI {
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
 
-        for i in 0..(rows - 2) {
+        for i in 0..(self.context.screen_rows - 2) {
             if i > self.tweets.len() as u16 {
                 break;
             }
@@ -123,28 +138,21 @@ impl UI {
             col_offset += (&tweet_author.len() + 1) as u16;
 
             let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
-            let (truncated, _) = formatted.unicode_truncate((cols.saturating_sub(col_offset)) as usize);
+            let (truncated, _) = formatted
+                .unicode_truncate((self.context.screen_cols.saturating_sub(col_offset)) as usize);
             queue!(stdout, cursor::MoveTo(col_offset, i))?;
             queue!(stdout, style::Print(truncated))?;
         }
 
-        self.render_status_bar()?;
+        render_bottom_bar(&self.context, &self.tweets, self.tweets_selected_index)?;
 
-        queue!(stdout, cursor::MoveTo(16, (self.tweets_selected_index - self.tweets_view_offset) as u16))?;
-        stdout.flush()?;
-        Ok(())
-    }
-
-    fn render_status_bar(&self) -> Result<()> {
-        let (cols, rows) = size()?;
-        let mut stdout = stdout();
-
-        queue!(stdout, cursor::MoveTo(0, rows - 1))?;
-        queue!(stdout, SetForegroundColor(Color::Black))?;
-        queue!(stdout, SetBackgroundColor(Color::White))?;
-        queue!(stdout, Print(format!("{}/{} tweets", self.tweets_selected_index, self.tweets.len())))?;
-        queue!(stdout, ResetColor)?;
-
+        queue!(
+            stdout,
+            cursor::MoveTo(
+                16,
+                (self.tweets_selected_index - self.tweets_view_offset) as u16
+            )
+        )?;
         stdout.flush()?;
         Ok(())
     }
@@ -152,38 +160,38 @@ impl UI {
     // CR-someday: maybe consider a [less] instead
     fn log_tweet(&mut self, index: usize) -> Result<()> {
         self.set_mode(UIMode::Log)?;
-        println!("{:?}", self.tweets[self.tweets_selected_index]);
+        println!("{:?}", self.tweets[index]);
         Ok(())
     }
 
     pub fn process_events_until_quit(&mut self) -> Result<()> {
         loop {
             match read()? {
-                Event::Key(key_event) => {
-                    match key_event.code {
-                        KeyCode::Esc => {
-                            self.show_tweets();
-                        },
-                        KeyCode::Up => {
-                            self.set_selected_index(self.tweets_selected_index.saturating_sub(1));
-                        },
-                        KeyCode::Down => {
-                            self.set_selected_index(self.tweets_selected_index + 1);
-                        },
-                        KeyCode::Char('i') => {
-                            self.log_tweet(self.tweets_selected_index);
-                        },
-                        KeyCode::Char('q') => {
-                            reset();
-                            std::process::exit(0);
-                        },
-                        _ => ()
+                Event::Key(key_event) => match key_event.code {
+                    KeyCode::Esc => {
+                        self.show_tweets()?;
                     }
+                    KeyCode::Up => {
+                        self.set_selected_index(self.tweets_selected_index.saturating_sub(1))?;
+                    }
+                    KeyCode::Down => {
+                        self.set_selected_index(self.tweets_selected_index + 1)?;
+                    }
+                    KeyCode::Char('i') => {
+                        self.log_tweet(self.tweets_selected_index)?;
+                    }
+                    KeyCode::Char('q') => {
+                        reset();
+                        std::process::exit(0);
+                    }
+                    _ => (),
                 },
                 Event::Resize(cols, rows) => {
-                    self.cols = cols;
-                    self.rows = rows;
-                },
+                    self.context = Context {
+                        screen_cols: cols,
+                        screen_rows: rows,
+                    };
+                }
                 _ => (),
             }
         }
