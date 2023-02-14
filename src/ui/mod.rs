@@ -73,13 +73,21 @@ impl UI {
         Ok(())
     }
 
-    pub fn set_tweets(&mut self, tweets: Vec<Tweet>) {
-        self.tweets = tweets
+    pub fn resize(&mut self, cols: u16, rows: u16) {
+        self.context = Context {
+            screen_cols: cols,
+            screen_rows: rows,
+        };
     }
 
-    pub fn set_selected_index(&mut self, new_index: usize) -> Result<()> {
-        // CR: clamp?
-        let new_index = max(0, min(new_index, self.tweets.len() - 1));
+    pub fn set_tweets(&mut self, tweets: &Vec<Tweet>) {
+        // CR: seems wrong to clone, maybe now we need a weak ref
+        self.tweets = tweets.clone()
+    }
+
+    pub fn move_selected_index(&mut self, delta: isize) -> Result<()> {
+        let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
+        let new_index = min(new_index, self.tweets.len() - 1);
         let view_top = self.tweets_view_offset;
         let view_height = (self.context.screen_rows - 3) as usize;
         let view_bottom = self.tweets_view_offset + view_height;
@@ -129,43 +137,15 @@ impl UI {
     }
 
     // CR-someday: maybe consider a [less] instead
-    fn log_tweet(&mut self, index: usize) -> Result<()> {
+    pub fn log_selected_tweet(&mut self) -> Result<()> {
         self.set_mode(UIMode::Log)?;
-        println!("{:?}", self.tweets[index]);
+        println!("{:?}", self.tweets[self.tweets_selected_index]);
         Ok(())
     }
 
-    pub fn process_events_until_quit(&mut self) -> Result<()> {
-        loop {
-            match read()? {
-                Event::Key(key_event) => match key_event.code {
-                    KeyCode::Esc => {
-                        self.show_tweets()?;
-                    }
-                    KeyCode::Up => {
-                        self.set_selected_index(self.tweets_selected_index.saturating_sub(1))?;
-                    }
-                    KeyCode::Down => {
-                        self.set_selected_index(self.tweets_selected_index + 1)?;
-                    }
-                    KeyCode::Char('i') => {
-                        self.log_tweet(self.tweets_selected_index)?;
-                    }
-                    KeyCode::Char('q') => {
-                        reset();
-                        std::process::exit(0);
-                    }
-                    _ => (),
-                },
-                Event::Resize(cols, rows) => {
-                    self.context = Context {
-                        screen_cols: cols,
-                        screen_rows: rows,
-                    };
-                }
-                _ => (),
-            }
-        }
+    pub fn log_message(&mut self, message: &str) -> Result<()> {
+        self.set_mode(UIMode::Log)?;
+        println!("{message}");
         Ok(())
     }
 }

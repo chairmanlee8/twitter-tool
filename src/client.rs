@@ -121,16 +121,22 @@ impl TwitterClient {
     pub async fn timeline_reverse_chronological(
         &self,
         user_id: &str,
-    ) -> Result<Vec<api::Tweet>, Box<dyn Error + Send + Sync>> {
+        pagination_token: Option<&String>
+    ) -> Result<(Vec<api::Tweet>, Option<String>), Box<dyn Error + Send + Sync>> {
         let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
 
         let mut uri = Url::parse(&format!(
             "https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological"
         ))?;
+
         uri.query_pairs_mut()
             .append_pair("tweet.fields", "created_at")
             .append_pair("user.fields", "username")
             .append_pair("expansions", "author_id");
+
+        if let Some(pagination_token) = pagination_token {
+            uri.query_pairs_mut().append_pair("pagination_token", pagination_token);
+        }
 
         let req = Request::builder()
             .method(Method::GET)
@@ -164,6 +170,8 @@ impl TwitterClient {
             })
             .collect();
 
-        Ok(tweets)
+        let next_pagination_token = resp.meta.and_then(|meta| meta.next_token);
+
+        Ok((tweets, next_pagination_token))
     }
 }
