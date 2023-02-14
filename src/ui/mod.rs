@@ -137,7 +137,6 @@ impl UI {
         Ok(())
     }
 
-    // CR-someday: maybe consider a [less] instead
     pub fn log_selected_tweet(&mut self) -> Result<()> {
         fs::write("/tmp/tweet", format!("{:#?}", self.tweets[self.tweets_selected_index]))?;
         let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
