@@ -1,4 +1,5 @@
 mod bottom_bar;
+mod tweet_pane;
 mod tweets_pane;
 
 use crate::api::Tweet;
@@ -14,6 +15,7 @@ use crossterm::{
 };
 use std::cmp::{max, min};
 use std::io::{stdout, Write};
+use crate::ui::tweet_pane::render_tweet_pane;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UIMode {
@@ -34,6 +36,7 @@ pub struct UI {
     tweets: Vec<Tweet>,
     tweets_view_offset: usize,
     tweets_selected_index: usize,
+    tweet_pane_width: u16
 }
 
 impl UI {
@@ -49,6 +52,7 @@ impl UI {
             tweets: Vec::new(),
             tweets_view_offset: 0,
             tweets_selected_index: 0,
+            tweet_pane_width: 80
         }
     }
 
@@ -89,6 +93,8 @@ impl UI {
             self.tweets_view_offset = max(0, new_index - view_height);
             self.show_tweets()
         } else {
+            // CR: this is confusing re the above two conditions, consider a refactor
+            render_tweet_pane(&self.context, self.tweet_pane_width, &self.tweets[self.tweets_selected_index])?;
             render_bottom_bar(&self.context, &self.tweets, self.tweets_selected_index)?;
             execute!(
                 stdout(),
@@ -106,7 +112,8 @@ impl UI {
 
         queue!(stdout(), Clear(ClearType::All))?;
 
-        render_tweets_pane(&self.context, &self.tweets, self.tweets_view_offset)?;
+        render_tweets_pane(&self.context, self.context.screen_cols - self.tweet_pane_width - 2, &self.tweets, self.tweets_view_offset)?;
+        render_tweet_pane(&self.context, self.tweet_pane_width, &self.tweets[self.tweets_selected_index])?;
         render_bottom_bar(&self.context, &self.tweets, self.tweets_selected_index)?;
 
         queue!(
@@ -166,18 +173,4 @@ impl UI {
 pub fn reset() {
     execute!(stdout(), LeaveAlternateScreen).unwrap();
     disable_raw_mode().unwrap()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_regex() {
-        let re_newlines = Regex::new(r"[\r\n]+").unwrap();
-        let str = "Detected new closed trade\n\nTrader: @Burgerinnn\nSymbol: $ETH\nPosition: short ↘\u{fe0f}\nEntry: 1 500.6\nExit: 1 498.2\nProfit: 3 994\nLeverage: 10x\n\nEntry, take profit, stats, leaderboard can be found at https://t.co/EFjrCz4DgD";
-        let result = re_newlines.replace_all(str, "⏎ ");
-        let expected = "Detected new closed trade⏎ Trader: @Burgerinnn⏎ Symbol: $ETH⏎ Position: short ↘\u{fe0f}⏎ Entry: 1 500.6⏎ Exit: 1 498.2⏎ Profit: 3 994⏎ Leverage: 10x⏎ Entry, take profit, stats, leaderboard can be found at https://t.co/EFjrCz4DgD";
-        assert_eq!(result, expected);
-    }
 }
