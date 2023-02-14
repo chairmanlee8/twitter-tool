@@ -130,7 +130,7 @@ impl TwitterClient {
         ))?;
 
         uri.query_pairs_mut()
-            .append_pair("tweet.fields", "created_at")
+            .append_pair("tweet.fields", "created_at,attachments,referenced_tweets,public_metrics,conversation_id")
             .append_pair("user.fields", "username")
             .append_pair("expansions", "author_id");
 

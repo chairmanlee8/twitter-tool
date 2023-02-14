@@ -30,5 +30,29 @@ pub struct Tweet {
     pub created_at: DateTime<Utc>,
     pub author_id: String,
     pub author_username: Option<String>,
-    pub author_name: Option<String>
+    pub author_name: Option<String>,
+    pub conversation_id: Option<String>,
+    pub referenced_tweets: Option<Vec<TweetReference>>,
+    pub attachments: Option<Attachments>,
+    pub public_metrics: Option<PublicMetrics>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TweetReference {
+    pub r#type: String,
+    pub id: String
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Attachments {
+    pub poll_ids: Option<Vec<String>>,
+    pub media_keys: Option<Vec<String>>
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublicMetrics {
+    pub retweet_count: i32,
+    pub reply_count: i32,
+    pub like_count: i32,
+    pub quote_count: i32
 }

@@ -6,7 +6,6 @@ use crate::api::Tweet;
 use crate::ui::bottom_bar::render_bottom_bar;
 use crate::ui::tweets_pane::render_tweets_pane;
 use crossterm::cursor;
-use crossterm::event::{read, Event, KeyCode};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
 use crossterm::{
     execute, queue,
@@ -14,6 +13,8 @@ use crossterm::{
     Result,
 };
 use std::cmp::{max, min};
+use std::fs;
+use std::process;
 use std::io::{stdout, Write};
 use crate::ui::tweet_pane::render_tweet_pane;
 
@@ -138,8 +139,9 @@ impl UI {
 
     // CR-someday: maybe consider a [less] instead
     pub fn log_selected_tweet(&mut self) -> Result<()> {
-        self.set_mode(UIMode::Log)?;
-        println!("{:?}", self.tweets[self.tweets_selected_index]);
+        fs::write("/tmp/tweet", format!("{:#?}", self.tweets[self.tweets_selected_index]))?;
+        let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
+        subshell.wait()?;
         Ok(())
     }
 
