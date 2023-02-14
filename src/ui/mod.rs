@@ -1,20 +1,19 @@
 mod bottom_bar;
+mod tweets_pane;
 
 use crate::api::Tweet;
 use crate::ui::bottom_bar::render_bottom_bar;
+use crate::ui::tweets_pane::render_tweets_pane;
 use crossterm::cursor;
 use crossterm::event::{read, Event, KeyCode};
-use crossterm::style::{self, Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
 use crossterm::{
     execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     Result,
 };
-use regex::Regex;
 use std::cmp::{max, min};
 use std::io::{stdout, Write};
-use unicode_truncate::UnicodeTruncateStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UIMode {
@@ -105,55 +104,20 @@ impl UI {
     pub fn show_tweets(&mut self) -> Result<()> {
         self.set_mode(UIMode::Interactive)?;
 
-        let mut stdout = stdout();
+        queue!(stdout(), Clear(ClearType::All))?;
 
-        queue!(stdout, Clear(ClearType::All))?;
-
-        let re_newlines = Regex::new(r"[\r\n]+").unwrap();
-        let str_unknown = String::from("[unknown]");
-
-        for i in 0..(self.context.screen_rows - 2) {
-            if i > self.tweets.len() as u16 {
-                break;
-            }
-
-            let tweet = &self.tweets[self.tweets_view_offset + (i as usize)];
-            let mut col_offset: u16 = 0;
-
-            let tweet_time = tweet.created_at.format("%m-%d %H:%M:%S");
-            let tweet_time = format!("{tweet_time}  > ");
-            queue!(stdout, cursor::MoveTo(col_offset, i))?;
-            queue!(stdout, SetForegroundColor(Color::DarkGrey))?;
-            queue!(stdout, style::Print(&tweet_time))?;
-            queue!(stdout, ResetColor)?;
-            col_offset += (tweet_time.len() + 1) as u16;
-
-            // CR: possible to cast from String to &str?
-            let tweet_author = tweet.author_username.as_ref().unwrap_or(&str_unknown);
-            let tweet_author = format!("@{tweet_author}");
-            queue!(stdout, cursor::MoveTo(col_offset, i))?;
-            queue!(stdout, SetForegroundColor(Color::DarkCyan))?;
-            queue!(stdout, style::Print(&tweet_author))?;
-            queue!(stdout, ResetColor)?;
-            col_offset += (&tweet_author.len() + 1) as u16;
-
-            let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
-            let (truncated, _) = formatted
-                .unicode_truncate((self.context.screen_cols.saturating_sub(col_offset)) as usize);
-            queue!(stdout, cursor::MoveTo(col_offset, i))?;
-            queue!(stdout, style::Print(truncated))?;
-        }
-
+        render_tweets_pane(&self.context, &self.tweets, self.tweets_view_offset)?;
         render_bottom_bar(&self.context, &self.tweets, self.tweets_selected_index)?;
 
         queue!(
-            stdout,
+            stdout(),
             cursor::MoveTo(
                 16,
                 (self.tweets_selected_index - self.tweets_view_offset) as u16
             )
         )?;
-        stdout.flush()?;
+
+        stdout().flush()?;
         Ok(())
     }
 
