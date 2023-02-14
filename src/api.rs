@@ -30,4 +30,5 @@ pub struct Tweet {
     pub created_at: DateTime<Utc>,
     pub author_id: String,
     pub author_username: Option<String>,
+    pub author_name: Option<String>
 }

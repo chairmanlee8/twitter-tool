@@ -17,8 +17,9 @@ pub fn render_tweet_pane(context: &Context, pane_width: u16, tweet: &api::Tweet)
 
     // CR: factor these out to impl Tweet
     let tweet_time = tweet.created_at.format("%Y-%m-%d %H:%M:%S");
-    let tweet_author = tweet.author_username.as_ref().unwrap_or(&str_unknown);
-    let tweet_author = format!("@{tweet_author}");
+    let tweet_author_username = tweet.author_username.as_ref().unwrap_or(&str_unknown);
+    let tweet_author_name = tweet.author_name.as_ref().unwrap_or(&str_unknown);
+    let tweet_author = format!("@{tweet_author_username} [{tweet_author_name}]");
 
     let mut row = 0;
 

@@ -154,10 +154,10 @@ impl TwitterClient {
         let resp: api::Response<Vec<api::Tweet>, Includes> = serde_json::from_slice(&resp)?;
 
         let includes = resp.includes.ok_or("Expected `includes`")?;
-        let users: HashMap<String, String> = includes
+        let users: HashMap<String, &api::User> = includes
             .users
             .iter()
-            .map(|user| (user.id.clone(), user.username.clone()))
+            .map(|user| (user.id.clone(), user))
             .collect();
 
         // CR: does Cow help here vs Clone?
@@ -165,7 +165,8 @@ impl TwitterClient {
             .data
             .iter()
             .map(|tweet| api::Tweet {
-                author_username: users.get(&tweet.author_id).map(|username| username.clone()),
+                author_username: users.get(&tweet.author_id).map(|user| user.username.clone()),
+                author_name: users.get(&tweet.author_id).map(|user| user.name.clone()),
                 ..tweet.clone()
             })
             .collect();
