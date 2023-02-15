@@ -19,7 +19,7 @@ use std::io::{stdout, Write};
 use crate::ui::tweet_pane::render_tweet_pane;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum UIMode {
+pub enum Mode {
     Log,
     Interactive,
 }
@@ -32,7 +32,7 @@ pub struct Context {
 // CR: should the UI really own state (tweets) here?  Seems like tweets should have a separate
 // state machine more connected to TwitterClient
 pub struct UI {
-    mode: UIMode,
+    mode: Mode,
     context: Context,
     tweets: Vec<Tweet>,
     tweets_view_offset: usize,
@@ -45,7 +45,7 @@ impl UI {
         let (cols, rows) = size().unwrap();
 
         Self {
-            mode: UIMode::Log,
+            mode: Mode::Log,
             context: Context {
                 screen_cols: cols,
                 screen_rows: rows,
@@ -57,15 +57,15 @@ impl UI {
         }
     }
 
-    fn set_mode(&mut self, mode: UIMode) -> Result<()> {
+    fn set_mode(&mut self, mode: Mode) -> Result<()> {
         let prev_mode = self.mode;
         self.mode = mode;
 
         // CR: no automatic deref?
-        if prev_mode == UIMode::Log && mode == UIMode::Interactive {
+        if prev_mode == Mode::Log && mode == Mode::Interactive {
             execute!(stdout(), EnterAlternateScreen)?;
             enable_raw_mode()?;
-        } else if prev_mode == UIMode::Interactive && mode == UIMode::Log {
+        } else if prev_mode == Mode::Interactive && mode == Mode::Log {
             execute!(stdout(), LeaveAlternateScreen)?;
             enable_raw_mode()?;
             // disable_raw_mode()?;
@@ -117,7 +117,7 @@ impl UI {
 
     // CR: switch to render_tweets (show_tweets then just sets state)
     pub fn show_tweets(&mut self) -> Result<()> {
-        self.set_mode(UIMode::Interactive)?;
+        self.set_mode(Mode::Interactive)?;
 
         queue!(stdout(), Clear(ClearType::All))?;
 
@@ -145,7 +145,7 @@ impl UI {
     }
 
     pub fn log_message(&mut self, message: &str) -> Result<()> {
-        self.set_mode(UIMode::Log)?;
+        self.set_mode(Mode::Log)?;
         println!("{message}");
         Ok(())
     }

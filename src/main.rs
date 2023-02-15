@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ui.show_tweets()?;
 
     loop {
+        // CR: TODO in general, only the UI knows the meaning of keystrokes
         match read()? {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Esc => ui.show_tweets()?,

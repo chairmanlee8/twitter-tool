@@ -12,14 +12,15 @@ use oauth2::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::{Arc, Mutex};
 use std::fs;
 use url::Url;
 
 pub struct TwitterClient {
+    https_client: Client<HttpsConnector<HttpConnector>>,
     twitter_client_id: String,
     twitter_client_secret: String,
-    access_token: Option<AccessToken>,
-    https_client: Client<HttpsConnector<HttpConnector>>,
+    access_token: Option<AccessToken>
 }
 
 impl TwitterClient {
@@ -27,15 +28,15 @@ impl TwitterClient {
         let https = HttpsConnector::new();
         let https_client = Client::builder().build::<_, hyper::Body>(https);
         Self {
+            https_client,
             twitter_client_id: twitter_client_id.to_string(),
             twitter_client_secret: twitter_client_secret.to_string(),
-            access_token: None,
-            https_client,
+            access_token: None
         }
     }
 
     pub fn save_access_token(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // CR: do we have to use serde_json, what about plain bytes
+        // CR-soon: do we have to use serde_json, what about plain bytes
         let access_token = self.access_token.as_ref().ok_or("No token to save")?;
         let access_token = serde_json::to_string(&access_token)?;
         fs::write("./var/.access_token", access_token)?;
