@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::twitter_client::api;
 use crate::ui::Context;
 use crossterm::style::Color;
@@ -9,7 +10,8 @@ use unicode_truncate::UnicodeTruncateStr;
 pub fn render_tweets_pane(
     context: &Context,
     pane_width: u16,
-    tweets: &Vec<api::Tweet>,
+    tweets: &HashMap<String, api::Tweet>,
+    tweets_reverse_chronological: &Vec<String>,
     view_offset: usize,
 ) -> Result<()> {
     let mut stdout = stdout();
@@ -18,11 +20,12 @@ pub fn render_tweets_pane(
     let str_unknown = String::from("[unknown]");
 
     for i in 0..(context.screen_rows - 2) {
-        if i > tweets.len() as u16 {
+        if i > tweets_reverse_chronological.len() as u16 {
             break;
         }
 
-        let tweet = &tweets[view_offset + (i as usize)];
+        let tweet_id = &tweets_reverse_chronological[view_offset + (i as usize)];
+        let tweet = &tweets.get(tweet_id).unwrap();
         let mut col_offset: u16 = 0;
 
         let tweet_time = tweet.created_at.format("%m-%d %H:%M:%S");

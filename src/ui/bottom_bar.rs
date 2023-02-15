@@ -6,7 +6,7 @@ use std::io::{stdout, Write};
 
 pub fn render_bottom_bar(
     context: &Context,
-    tweets: &Vec<api::Tweet>,
+    tweets: &Vec<String>,
     selected_index: usize,
 ) -> Result<()> {
     let mut stdout = stdout();

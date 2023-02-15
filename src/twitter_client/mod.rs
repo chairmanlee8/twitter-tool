@@ -15,6 +15,7 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::fs;
 use url::Url;
+use anyhow::{anyhow, Result};
 
 pub struct TwitterClient {
     https_client: Client<HttpsConnector<HttpConnector>>,
@@ -35,15 +36,15 @@ impl TwitterClient {
         }
     }
 
-    pub fn save_access_token(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn save_access_token(&self) -> Result<()> {
         // CR-soon: do we have to use serde_json, what about plain bytes
-        let access_token = self.access_token.as_ref().ok_or("No token to save")?;
+        let access_token = self.access_token.as_ref().ok_or(anyhow!("No token to save"))?;
         let access_token = serde_json::to_string(&access_token)?;
         fs::write("./var/.access_token", access_token)?;
         Ok(())
     }
 
-    pub fn load_access_token(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub fn load_access_token(&mut self) -> Result<()> {
         let access_token = fs::read_to_string("./var/.access_token")?;
         let access_token = serde_json::from_str(&access_token)?;
         self.access_token = Some(access_token);
@@ -51,7 +52,7 @@ impl TwitterClient {
     }
 
     // CR: type Error = Error + Send + Sync?
-    pub async fn authorize(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn authorize(&mut self) -> Result<()> {
         let oauth_client = BasicClient::new(
             ClientId::new(self.twitter_client_id.clone()),
             Some(ClientSecret::new(self.twitter_client_secret.clone())),
@@ -90,8 +91,9 @@ impl TwitterClient {
         }
 
         let _expected_csrf_state =
-            expected_csrf_state.ok_or("Missing `state` param from callback")?;
-        let authorization_code = authorization_code.ok_or("Missing `code` param from callback")?;
+            expected_csrf_state.ok_or(anyhow!("Missing `state` param from callback"))?;
+        let authorization_code =
+            authorization_code.ok_or(anyhow!("Missing `code` param from callback"))?;
 
         // Once the user has been redirected to the redirect URL, you'll have access to the
         // authorization code. For security reasons, your code should verify that the `state`
@@ -106,8 +108,8 @@ impl TwitterClient {
         Ok(())
     }
 
-    pub async fn me(&self) -> Result<api::User, Box<dyn Error + Send + Sync>> {
-        let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
+    pub async fn me(&self) -> Result<api::User> {
+        let access_token = self.access_token.as_ref().ok_or(anyhow!("Unauthorized"))?;
         let req = Request::builder()
             .method(Method::GET)
             .uri("https://api.twitter.com/2/users/me")
@@ -124,8 +126,8 @@ impl TwitterClient {
         &self,
         user_id: &str,
         pagination_token: Option<&String>
-    ) -> Result<(Vec<api::Tweet>, Option<String>), Box<dyn Error + Send + Sync>> {
-        let access_token = self.access_token.as_ref().ok_or("Unauthorized")?;
+    ) -> Result<(Vec<api::Tweet>, Option<String>)> {
+        let access_token = self.access_token.as_ref().ok_or(anyhow!("Unauthorized"))?;
 
         let mut uri = Url::parse(&format!(
             "https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological"
@@ -155,7 +157,7 @@ impl TwitterClient {
         let resp = hyper::body::to_bytes(resp.into_body()).await?;
         let resp: api::Response<Vec<api::Tweet>, Includes> = serde_json::from_slice(&resp)?;
 
-        let includes = resp.includes.ok_or("Expected `includes`")?;
+        let includes = resp.includes.ok_or(anyhow!("Expected `includes`"))?;
         let users: HashMap<String, &api::User> = includes
             .users
             .iter()
