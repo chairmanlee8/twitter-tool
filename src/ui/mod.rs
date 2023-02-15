@@ -2,7 +2,7 @@ mod bottom_bar;
 mod tweet_pane;
 mod tweets_pane;
 
-use crate::api::Tweet;
+use crate::twitter_client::api::Tweet;
 use crate::ui::bottom_bar::render_bottom_bar;
 use crate::ui::tweets_pane::render_tweets_pane;
 use crossterm::cursor;

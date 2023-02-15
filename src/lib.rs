@@ -1,3 +1,2 @@
-pub mod api;
-pub mod client;
+pub mod twitter_client;
 pub mod ui;

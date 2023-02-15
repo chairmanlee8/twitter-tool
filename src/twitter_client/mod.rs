@@ -1,4 +1,5 @@
-use crate::api;
+pub mod api;
+
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Method, Request};
 use hyper_tls::HttpsConnector;

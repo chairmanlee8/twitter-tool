@@ -33,6 +33,8 @@
 - EXCEPT for remote streaming, where bandwidth needed for pixels >>> glyphs (even with diff/compression)
 - ALSO EXCEPT for TUIs live inside a terminal ecosystem which might be compelling to some users
 - Read more about the Go guy's TUI library and philosophy for a counterargument
+- In TUI, w/o sixel or something similar, images really suffer, maybe better to show an AI-gen caption instead...
+- ...and defer to "open"...honestly better to just lift to tauri
 
 # More in the Future
 

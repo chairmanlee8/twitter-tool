@@ -2,7 +2,7 @@ use clap::Parser;
 use crossterm::event::{read, Event, KeyCode};
 use dotenvy::dotenv;
 use std::env;
-use twitter_tool_rs::client::TwitterClient;
+use twitter_tool_rs::twitter_client::TwitterClient;
 use twitter_tool_rs::ui;
 
 #[derive(Parser, Debug)]

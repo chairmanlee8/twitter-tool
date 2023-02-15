@@ -1,4 +1,4 @@
-use crate::api;
+use crate::twitter_client::api;
 use crate::ui::Context;
 use crossterm::style::Color;
 use crossterm::terminal::{self, ClearType};
