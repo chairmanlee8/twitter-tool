@@ -269,6 +269,45 @@ impl UI {
         });
     }
 
+    async fn handle_internal_event(&mut self, event: InternalEvent) -> Result<()> {
+        match event {
+            InternalEvent::TweetsFeedUpdated => {
+                self.dirty.insert(Dirty::TWEET_PANE);
+                self.render().await?;
+            },
+            InternalEvent::LogError(err) => {
+                self.log_message(err.to_string().as_str())?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_terminal_event(&mut self, event: Event) -> Result<()> {
+        match event {
+            Event::Key(key_event) => match key_event.code {
+                KeyCode::Esc => {
+                    self.dirty = Dirty::all();
+                    self.render().await?
+                },
+                KeyCode::Up => self.move_selected_index(-1).await?,
+                KeyCode::Down => self.move_selected_index(1).await?,
+                KeyCode::Char('h') => self.log_message("hello")?,
+                KeyCode::Char('i') => self.log_selected_tweet().await?,
+                KeyCode::Char('n') => {
+                    self.do_load_page_of_tweets(false);
+                },
+                KeyCode::Char('q') => {
+                    reset();
+                    process::exit(0);
+                }
+                _ => (),
+            },
+            Event::Resize(cols, rows) => self.resize(cols, rows),
+            _ => (),
+        }
+        Ok(())
+    }
+
     pub async fn event_loop(&mut self) -> Result<()> {
         let mut terminal_event_stream = EventStream::new();
 
@@ -278,44 +317,13 @@ impl UI {
 
             tokio::select! {
                 event = terminal_event => {
-                    match event {
-                        Some(Ok(event)) => {
-                            match event {
-                                Event::Key(key_event) => match key_event.code {
-                                    KeyCode::Esc => {
-                                        self.dirty = Dirty::all();
-                                        self.render().await?
-                                    },
-                                    KeyCode::Up => self.move_selected_index(-1).await?,
-                                    KeyCode::Down => self.move_selected_index(1).await?,
-                                    KeyCode::Char('h') => self.log_message("hello")?,
-                                    KeyCode::Char('i') => self.log_selected_tweet().await?,
-                                    KeyCode::Char('n') => {
-                                        self.do_load_page_of_tweets(false);
-                                    },
-                                    KeyCode::Char('q') => {
-                                        reset();
-                                        process::exit(0);
-                                    }
-                                    _ => (),
-                                },
-                                Event::Resize(cols, rows) => self.resize(cols, rows),
-                                _ => (),
-                            }
-                        }
-                        _ => ()
+                    if let Some(Ok(event)) = event {
+                        self.handle_terminal_event(event).await?;
                     }
                 },
                 event = internal_event => {
-                    match event {
-                        Some(InternalEvent::TweetsFeedUpdated) => {
-                            self.dirty.insert(Dirty::TWEET_PANE);
-                            self.render().await?;
-                        },
-                        Some(InternalEvent::LogError(err)) => {
-                            self.log_message(err.to_string().as_str())?;
-                        },
-                        None => ()
+                    if let Some(event) = event {
+                        self.handle_internal_event(event).await?;
                     }
                 }
             }
