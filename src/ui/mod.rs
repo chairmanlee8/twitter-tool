@@ -2,9 +2,10 @@ mod bottom_bar;
 mod tweet_pane;
 mod tweets_pane;
 
+use futures_util::{FutureExt, StreamExt};
 use crate::ui::bottom_bar::render_bottom_bar;
 use crate::ui::tweets_pane::render_tweets_pane;
-use crossterm::event::{read, Event, KeyCode};
+use crossterm::event::{read, Event, EventStream, KeyCode};
 use crossterm::cursor;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
 use crossterm::{
@@ -13,13 +14,12 @@ use crossterm::{
 };
 use std::cmp::{max, min};
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs;
 use std::process;
-use anyhow::{anyhow, Result};
-use std::io::{ErrorKind, stdout, Write};
+use anyhow::{anyhow, Result, Error, Context};
+use std::io::{stdout, Write};
 use std::sync::{Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::{self, UnboundedReceiver, UnboundedSender}, Mutex};
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::tweet_pane::render_tweet_pane;
 
@@ -29,16 +29,23 @@ pub enum Mode {
     Interactive,
 }
 
-pub struct Context {
+pub struct Layout {
     pub screen_cols: u16,
     pub screen_rows: u16,
     // TODO pub tweets_feed_pane_width, pub tweet_detail_pane_width, rename bottom_bar to status_bar
 }
 
+#[derive(Debug)]
+enum InternalEvent {
+    TweetsFeedUpdated,
+    LogError(Error)
+}
+
 // TODO deep dive into str vs String
 pub struct UI {
     mode: Mode,
-    context: Context,
+    layout: Layout,
+    events: (UnboundedSender<InternalEvent>, UnboundedReceiver<InternalEvent>),
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
@@ -53,13 +60,15 @@ pub struct UI {
 impl UI {
     pub fn new(twitter_client: TwitterClient, twitter_user: api::User) -> Self {
         let (cols, rows) = size().unwrap();
+        let (tx, rx) = mpsc::unbounded_channel();
 
         Self {
             mode: Mode::Log,
-            context: Context {
+            layout: Layout {
                 screen_cols: cols,
                 screen_rows: rows,
             },
+            events: (tx, rx),
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
             tweets: Arc::new(Mutex::new(HashMap::new())),
@@ -89,7 +98,7 @@ impl UI {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        self.context = Context {
+        self.layout = Layout {
             screen_cols: cols,
             screen_rows: rows,
         };
@@ -101,7 +110,7 @@ impl UI {
         let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
         let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
         let view_top = self.tweets_view_offset;
-        let view_height = (self.context.screen_rows - 3) as usize;
+        let view_height = (self.layout.screen_rows - 3) as usize;
         let view_bottom = self.tweets_view_offset + view_height;
 
         self.tweets_selected_index = new_index;
@@ -121,13 +130,13 @@ impl UI {
                 let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
 
                 render_tweet_pane(
-                    &self.context,
+                    &self.layout,
                     self.tweet_pane_width,
                     &tweets[&tweets_reverse_chronological[self.tweets_selected_index]]
                 )?;
 
                 render_bottom_bar(
-                    &self.context,
+                    &self.layout,
                     &tweets_reverse_chronological,
                     self.tweets_selected_index
                 )?;
@@ -155,21 +164,21 @@ impl UI {
         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
 
         render_tweets_pane(
-            &self.context,
-            self.context.screen_cols - self.tweet_pane_width - 2,
+            &self.layout,
+            self.layout.screen_cols - self.tweet_pane_width - 2,
             &tweets,
             &tweets_reverse_chronological,
             self.tweets_view_offset
         )?;
 
         render_tweet_pane(
-            &self.context,
+            &self.layout,
             self.tweet_pane_width,
             &tweets[&tweets_reverse_chronological[self.tweets_selected_index]]
         )?;
 
         render_bottom_bar(
-            &self.context,
+            &self.layout,
             &tweets_reverse_chronological,
             self.tweets_selected_index
         )?;
@@ -239,7 +248,8 @@ impl UI {
         Ok(())
     }
 
-    pub fn load_next_page_of_tweets(&mut self) -> Result<()> {
+    pub fn do_load_next_page_of_tweets(&mut self) {
+        let event_sender = self.events.0.clone();
         let twitter_client = self.twitter_client.clone();
         let twitter_user = self.twitter_user.clone();
         let tweets_page_token = self.tweets_page_token.clone();
@@ -247,70 +257,89 @@ impl UI {
         let tweets_reverse_chronological = self.tweets_reverse_chronological.clone();
 
         tokio::spawn(async move {
-            let result = {
-                let mut lock = tweets_page_token.try_lock();
-                if let Ok(ref mut mutex) = lock {
-                    // CR: gross
-                    let page_token: Option<String> = mutex.clone();
-                    if let Some(page_token) = page_token {
-                        // TODO: this is dup code
-                        let (new_tweets, page_token) = twitter_client
-                            .timeline_reverse_chronological(&twitter_user.id, Some(&page_token))
-                            .await?;
-                        let mut new_tweets_reverse_chronological: Vec<String> = Vec::new();
+            match async {
+                let mut tweets_page_token = tweets_page_token.try_lock().with_context(|| "Cannot get lock")?;
+                // CR: gross
+                let page_token: Option<String> = tweets_page_token.clone();
+                if let Some(page_token) = page_token {
+                    // TODO: this is dup code
+                    let (new_tweets, page_token) = twitter_client
+                        .timeline_reverse_chronological(&twitter_user.id, Some(&page_token))
+                        .await?;
+                    let mut new_tweets_reverse_chronological: Vec<String> = Vec::new();
 
-                        **mutex = page_token;
+                    *tweets_page_token = page_token;
 
-                        // CR: TODO safe to unwrap mutex lock?
-                        let mut tweets = tweets.lock().await;
-                        for tweet in new_tweets {
-                            new_tweets_reverse_chronological.push(tweet.id.clone());
-                            tweets.insert(tweet.id.clone(), tweet);
-                        }
-                        drop(tweets);
-
-                        let mut tweets_reverse_chronological = tweets_reverse_chronological.lock().await;
-                        tweets_reverse_chronological.append(&mut new_tweets_reverse_chronological);
-                        drop(tweets_reverse_chronological);
-                    } else {
-                        return Err(anyhow!("No more pages"));
+                    // CR: TODO safe to unwrap mutex lock?
+                    let mut tweets = tweets.lock().await;
+                    for tweet in new_tweets {
+                        new_tweets_reverse_chronological.push(tweet.id.clone());
+                        tweets.insert(tweet.id.clone(), tweet);
                     }
+                    drop(tweets);
+
+                    let mut tweets_reverse_chronological = tweets_reverse_chronological.lock().await;
+                    tweets_reverse_chronological.append(&mut new_tweets_reverse_chronological);
+                    drop(tweets_reverse_chronological);
                 } else {
-                    return Err(anyhow!("Could not get lock"));
+                    return Err(anyhow!("No more pages"));
                 }
                 Ok(())
-            };
-            result
-            // match result {
-            //     Ok(()) => self.show_tweets()?,
-            //     Err(msg) => self.log_message(msg)?
-            // };
+            }.await {
+                Ok(()) => event_sender.send(InternalEvent::TweetsFeedUpdated),
+                Err(error) => event_sender.send(InternalEvent::LogError(error))
+            }
         });
-        Ok(())
     }
 
     pub async fn event_loop(&mut self) -> Result<()> {
         self.load_first_page_of_tweets().await?;
         self.show_tweets().await?;
 
+        let mut terminal_event_stream = EventStream::new();
+
         loop {
-            match read()? {
-                Event::Key(key_event) => match key_event.code {
-                    KeyCode::Esc => self.show_tweets().await?,
-                    KeyCode::Up => self.move_selected_index(-1).await?,
-                    KeyCode::Down => self.move_selected_index(1).await?,
-                    KeyCode::Char('i') => self.log_selected_tweet().await?,
-                    KeyCode::Char('n') => {
-                        self.load_next_page_of_tweets();
-                    },
-                    KeyCode::Char('q') => {
-                        reset();
-                        process::exit(0);
+            let terminal_event = terminal_event_stream.next().fuse();
+            let internal_event = self.events.1.recv();
+
+            tokio::select! {
+                maybe_event = terminal_event => {
+                    match maybe_event {
+                        Some(Ok(event)) => {
+                            match event {
+                                Event::Key(key_event) => match key_event.code {
+                                    KeyCode::Esc => self.show_tweets().await?,
+                                    KeyCode::Up => self.move_selected_index(-1).await?,
+                                    KeyCode::Down => self.move_selected_index(1).await?,
+                                    KeyCode::Char('h') => self.log_message("hello")?,
+                                    KeyCode::Char('i') => self.log_selected_tweet().await?,
+                                    KeyCode::Char('n') => {
+                                        self.do_load_next_page_of_tweets();
+                                    },
+                                    KeyCode::Char('q') => {
+                                        reset();
+                                        process::exit(0);
+                                    }
+                                    _ => (),
+                                },
+                                Event::Resize(cols, rows) => self.resize(cols, rows),
+                                _ => (),
+                            }
+                        }
+                        _ => ()
                     }
-                    _ => (),
                 },
-                Event::Resize(cols, rows) => self.resize(cols, rows),
-                _ => (),
+                ievent = internal_event => {
+                    match ievent {
+                        Some(InternalEvent::TweetsFeedUpdated) => {
+                            self.show_tweets().await?;
+                        },
+                        Some(InternalEvent::LogError(err)) => {
+                            self.log_message(err.to_string().as_str())?;
+                        },
+                        None => ()
+                    }
+                }
             }
         }
     }

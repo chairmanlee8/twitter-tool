@@ -1,5 +1,5 @@
 use crate::twitter_client::api;
-use crate::ui::Context;
+use crate::ui::Layout;
 use crossterm::style::Color;
 use crossterm::terminal::{self, ClearType};
 use crossterm::{cursor, queue, style, Result};
@@ -8,7 +8,7 @@ use std::io::stdout;
 use unicode_segmentation::UnicodeSegmentation;
 // use itertools::Itertools;
 
-pub fn render_tweet_pane(context: &Context, pane_width: u16, tweet: &api::Tweet) -> Result<()> {
+pub fn render_tweet_pane(context: &Layout, pane_width: u16, tweet: &api::Tweet) -> Result<()> {
     // CR: move this to Context
     let mut stdout = stdout();
 

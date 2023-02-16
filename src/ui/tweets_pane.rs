@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::twitter_client::api;
-use crate::ui::Context;
+use crate::ui::Layout;
 use crossterm::style::Color;
 use crossterm::{cursor, queue, style, Result};
 use regex::Regex;
@@ -8,7 +8,7 @@ use std::io::stdout;
 use unicode_truncate::UnicodeTruncateStr;
 
 pub fn render_tweets_pane(
-    context: &Context,
+    context: &Layout,
     pane_width: u16,
     tweets: &HashMap<String, api::Tweet>,
     tweets_reverse_chronological: &Vec<String>,

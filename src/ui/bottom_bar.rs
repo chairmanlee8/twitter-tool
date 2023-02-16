@@ -1,11 +1,11 @@
 use crate::twitter_client::api;
-use crate::ui::Context;
+use crate::ui::Layout;
 use crossterm::style::Color;
 use crossterm::{cursor, queue, style, Result};
 use std::io::{stdout, Write};
 
 pub fn render_bottom_bar(
-    context: &Context,
+    context: &Layout,
     tweets: &Vec<String>,
     selected_index: usize,
 ) -> Result<()> {
