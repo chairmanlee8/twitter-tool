@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use bitflags::bitflags;
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode};
-use crossterm::terminal::{self, Clear, ClearType};
+use crossterm::terminal;
 use crossterm::{
     execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
@@ -277,8 +277,8 @@ impl UI {
             let internal_event = self.events.1.recv();
 
             tokio::select! {
-                maybe_event = terminal_event => {
-                    match maybe_event {
+                event = terminal_event => {
+                    match event {
                         Some(Ok(event)) => {
                             match event {
                                 Event::Key(key_event) => match key_event.code {
@@ -306,8 +306,8 @@ impl UI {
                         _ => ()
                     }
                 },
-                ievent = internal_event => {
-                    match ievent {
+                event = internal_event => {
+                    match event {
                         Some(InternalEvent::TweetsFeedUpdated) => {
                             self.dirty.insert(Dirty::TWEET_PANE);
                             self.render().await?;
