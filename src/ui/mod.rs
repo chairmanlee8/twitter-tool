@@ -5,7 +5,7 @@ mod tweet_pane;
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::render_bottom_bar;
 use crate::ui::feed_pane::render_feed_pane;
-use crate::ui::tweet_pane::render_tweet_pane;
+use crate::ui::tweet_pane::TweetPane;
 use anyhow::{anyhow, Context, Error, Result};
 use bitflags::bitflags;
 use crossterm::cursor;
@@ -55,6 +55,9 @@ bitflags! {
     }
 }
 
+// CR-soon: pub trait Animate
+// CR-soon: pub trait Focus
+
 // TODO deep dive into str vs String
 pub struct UI {
     mode: Mode,
@@ -71,6 +74,7 @@ pub struct UI {
     tweets_page_token: Arc<Mutex<Option<String>>>,
     tweets_view_offset: usize,
     tweets_selected_index: usize,
+    tweet_pane: TweetPane,
 }
 
 impl UI {
@@ -96,6 +100,7 @@ impl UI {
             tweets_page_token: Arc::new(Mutex::new(None)),
             tweets_view_offset: 0,
             tweets_selected_index: 0,
+            tweet_pane: TweetPane,
         }
     }
 
@@ -164,7 +169,7 @@ impl UI {
             }
 
             if self.dirty.contains(Dirty::TWEET_PANE) {
-                render_tweet_pane(
+                self.tweet_pane.render(
                     &self.layout,
                     &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
                 )?;
@@ -272,7 +277,7 @@ impl UI {
             InternalEvent::TweetsFeedUpdated => {
                 self.dirty.insert(Dirty::TWEET_PANE);
                 self.render().await?;
-            },
+            }
             InternalEvent::LogError(err) => {
                 self.log_message(err.to_string().as_str())?;
             }
@@ -286,14 +291,14 @@ impl UI {
                 KeyCode::Esc => {
                     self.dirty = Dirty::all();
                     self.render().await?
-                },
+                }
                 KeyCode::Up => self.move_selected_index(-1).await?,
                 KeyCode::Down => self.move_selected_index(1).await?,
                 KeyCode::Char('h') => self.log_message("hello")?,
                 KeyCode::Char('i') => self.log_selected_tweet().await?,
                 KeyCode::Char('n') => {
                     self.do_load_page_of_tweets(false);
-                },
+                }
                 KeyCode::Char('q') => {
                     reset();
                     process::exit(0);
