@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "1.0.69"
 chrono = "0.4.23"
 clap = { version = "4.1.4", features = ["derive"] }
-crossterm = "0.26.0"
+crossterm = { version = "0.26.0", features = ["event-stream"] }
 ctrlc = "3.2.5"
 dotenvy = "0.15.6"
 governor = "0.5.1"
