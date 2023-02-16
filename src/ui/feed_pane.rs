@@ -1,25 +1,24 @@
 use crate::twitter_client::api;
 use crate::ui::Layout;
-use crossterm::style::Color;
-use crossterm::{cursor, queue, style, Result};
+use crossterm::style::{self, Color};
+use crossterm::{cursor, queue, Result};
 use regex::Regex;
 use std::collections::HashMap;
-use std::io::stdout;
 use unicode_truncate::UnicodeTruncateStr;
 
-pub fn render_tweets_pane(
-    context: &Layout,
-    pane_width: u16,
+pub fn render_feed_pane(
+    layout: &Layout,
     tweets: &HashMap<String, api::Tweet>,
     tweets_reverse_chronological: &Vec<String>,
     view_offset: usize,
 ) -> Result<()> {
-    let mut stdout = stdout();
+    let mut stdout = &layout.stdout;
 
+    let inner_width = layout.feed_pane_width - 2;
     let re_newlines = Regex::new(r"[\r\n]+").unwrap();
     let str_unknown = String::from("[unknown]");
 
-    for i in 0..(context.screen_rows - 2) {
+    for i in 0..(layout.screen_rows - 2) {
         if i > tweets_reverse_chronological.len() as u16 {
             break;
         }
@@ -47,7 +46,7 @@ pub fn render_tweets_pane(
 
         let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
         let (truncated, _) =
-            formatted.unicode_truncate((pane_width.saturating_sub(col_offset)) as usize);
+            formatted.unicode_truncate((inner_width.saturating_sub(col_offset)) as usize);
         queue!(stdout, cursor::MoveTo(col_offset, i))?;
         queue!(stdout, style::Print(truncated))?;
     }

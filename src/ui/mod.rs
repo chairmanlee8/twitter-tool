@@ -1,11 +1,11 @@
 mod bottom_bar;
 mod tweet_pane;
-mod tweets_pane;
+mod feed_pane;
 
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::render_bottom_bar;
 use crate::ui::tweet_pane::render_tweet_pane;
-use crate::ui::tweets_pane::render_tweets_pane;
+use crate::ui::feed_pane::render_feed_pane;
 use anyhow::{anyhow, Context, Error, Result};
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode};
@@ -18,7 +18,7 @@ use futures_util::{FutureExt, StreamExt};
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::process;
 use std::sync::Arc;
 use tokio::sync::{
@@ -33,9 +33,11 @@ pub enum Mode {
 }
 
 pub struct Layout {
+    pub stdout: Stdout,
     pub screen_cols: u16,
     pub screen_rows: u16,
-    // TODO pub tweets_feed_pane_width, pub tweet_detail_pane_width, rename bottom_bar to status_bar
+    pub feed_pane_width: u16,
+    pub tweet_pane_width: u16
 }
 
 #[derive(Debug)]
@@ -59,7 +61,6 @@ pub struct UI {
     tweets_page_token: Arc<Mutex<Option<String>>>,
     tweets_view_offset: usize,
     tweets_selected_index: usize,
-    tweet_pane_width: u16,
 }
 
 impl UI {
@@ -70,8 +71,11 @@ impl UI {
         Self {
             mode: Mode::Log,
             layout: Layout {
+                stdout: stdout(),
                 screen_cols: cols,
                 screen_rows: rows,
+                feed_pane_width: cols / 2,
+                tweet_pane_width: cols / 2
             },
             events: (tx, rx),
             twitter_client: Arc::new(twitter_client),
@@ -81,7 +85,6 @@ impl UI {
             tweets_page_token: Arc::new(Mutex::new(None)),
             tweets_view_offset: 0,
             tweets_selected_index: 0,
-            tweet_pane_width: 80,
         }
     }
 
@@ -103,10 +106,8 @@ impl UI {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        self.layout = Layout {
-            screen_cols: cols,
-            screen_rows: rows,
-        };
+        self.layout.screen_cols = cols;
+        self.layout.screen_rows = rows;
     }
 
     pub async fn move_selected_index(&mut self, delta: isize) -> Result<()> {
@@ -136,7 +137,6 @@ impl UI {
 
                 render_tweet_pane(
                     &self.layout,
-                    self.tweet_pane_width,
                     &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
                 )?;
 
@@ -163,43 +163,42 @@ impl UI {
     pub async fn show_tweets(&mut self) -> Result<()> {
         self.set_mode(Mode::Interactive)?;
 
-        queue!(stdout(), Clear(ClearType::All))?;
+        let mut stdout = &self.layout.stdout;
 
-        let tweets = self.tweets.lock().await;
-        let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+        queue!(stdout, Clear(ClearType::All))?;
 
-        render_tweets_pane(
-            &self.layout,
-            self.layout.screen_cols - self.tweet_pane_width - 2,
-            &tweets,
-            &tweets_reverse_chronological,
-            self.tweets_view_offset,
-        )?;
+        {
+            let tweets = self.tweets.lock().await;
+            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
 
-        render_tweet_pane(
-            &self.layout,
-            self.tweet_pane_width,
-            &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
-        )?;
+            render_feed_pane(
+                &self.layout,
+                &tweets,
+                &tweets_reverse_chronological,
+                self.tweets_view_offset,
+            )?;
 
-        render_bottom_bar(
-            &self.layout,
-            &tweets_reverse_chronological,
-            self.tweets_selected_index,
-        )?;
+            render_tweet_pane(
+                &self.layout,
+                &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
+            )?;
 
-        drop(tweets_reverse_chronological);
-        drop(tweets);
+            render_bottom_bar(
+                &self.layout,
+                &tweets_reverse_chronological,
+                self.tweets_selected_index,
+            )?;
+        }
 
         queue!(
-            stdout(),
+            stdout,
             cursor::MoveTo(
                 16,
                 (self.tweets_selected_index - self.tweets_view_offset) as u16
             )
         )?;
 
-        stdout().flush()?;
+        stdout.flush()?;
         Ok(())
     }
 
@@ -223,6 +222,9 @@ impl UI {
         Ok(())
     }
 
+    // CR: need to sift results
+    // CR: need a fixed page size, then call the twitterclient as many times as needed to achieve
+    // the desired page effect
     pub fn do_load_page_of_tweets(&mut self, restart: bool) {
         let event_sender = self.events.0.clone();
         let twitter_client = self.twitter_client.clone();

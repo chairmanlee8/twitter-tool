@@ -4,18 +4,15 @@ use crossterm::style::Color;
 use crossterm::terminal::{self, ClearType};
 use crossterm::{cursor, queue, style, Result};
 use regex::Regex;
-use std::io::stdout;
 use unicode_segmentation::UnicodeSegmentation;
-// use itertools::Itertools;
 
-pub fn render_tweet_pane(context: &Layout, pane_width: u16, tweet: &api::Tweet) -> Result<()> {
-    // CR: move this to Context
-    let mut stdout = stdout();
+pub fn render_tweet_pane(layout: &Layout, tweet: &api::Tweet) -> Result<()> {
+    let mut stdout = &layout.stdout;
 
+    let inner_width = layout.tweet_pane_width - 1;
     let re_newlines = Regex::new(r"[\r\n]+").unwrap();
     let str_unknown = String::from("[unknown]");
 
-    // CR: factor these out to impl Tweet
     let tweet_time = tweet.created_at.format("%Y-%m-%d %H:%M:%S");
     let tweet_author_username = tweet.author_username.as_ref().unwrap_or(&str_unknown);
     let tweet_author_name = tweet.author_name.as_ref().unwrap_or(&str_unknown);
@@ -25,17 +22,17 @@ pub fn render_tweet_pane(context: &Layout, pane_width: u16, tweet: &api::Tweet) 
 
     // CR: graphemes is one thing but should split on words then greedy instead
     // CR: some graphemes are double width, need to count correctly
-    // CR-soon: use Knuth
+    // CR-someday: use Knuth algorithm
     let tweet_paragraphs: Vec<&str> = re_newlines.split(&tweet.text).collect();
     let tweet_lines: Vec<String> = tweet_paragraphs
         .iter()
-        .map(|p| break_lines(p, pane_width as usize))
+        .map(|p| break_lines(p, inner_width as usize))
         .flatten()
         .collect();
 
     queue!(
         stdout,
-        cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+        cursor::MoveTo(layout.screen_cols - inner_width, row)
     )?;
     queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
     queue!(stdout, style::Print(&tweet_time))?;
@@ -43,7 +40,7 @@ pub fn render_tweet_pane(context: &Layout, pane_width: u16, tweet: &api::Tweet) 
 
     queue!(
         stdout,
-        cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+        cursor::MoveTo(layout.screen_cols - inner_width, row)
     )?;
     queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
     queue!(stdout, style::Print(&tweet_author))?;
@@ -52,17 +49,17 @@ pub fn render_tweet_pane(context: &Layout, pane_width: u16, tweet: &api::Tweet) 
     for tweet_line in tweet_lines {
         queue!(
             stdout,
-            cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+            cursor::MoveTo(layout.screen_cols - inner_width, row)
         )?;
         queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
         queue!(stdout, style::Print(&tweet_line))?;
         row += 1;
     }
 
-    while row < context.screen_rows {
+    while row < layout.screen_rows {
         queue!(
             stdout,
-            cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+            cursor::MoveTo(layout.screen_cols - inner_width, row)
         )?;
         queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
         row += 1;
