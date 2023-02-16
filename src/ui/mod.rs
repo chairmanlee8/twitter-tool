@@ -2,7 +2,6 @@ mod bottom_bar;
 mod feed_pane;
 mod tweet_pane;
 
-use std::borrow::BorrowMut;
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::BottomBar;
 use crate::ui::feed_pane::FeedPane;
@@ -20,10 +19,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{stdout, Stdout, Write};
 use std::process;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{Mutex as AsyncMutex};
-use tokio::sync::{mpsc::{self, UnboundedReceiver, UnboundedSender}};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Mode {
@@ -39,18 +37,22 @@ pub enum InternalEvent {
     LogError(Error),
 }
 
-// CR: derive default?
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub struct BoundingBox {
     pub left: u16,
     pub top: u16,
     pub width: u16,
-    pub height: u16
+    pub height: u16,
 }
 
 impl BoundingBox {
     pub fn new(left: u16, top: u16, width: u16, height: u16) -> Self {
-        Self { left, top, width, height }
+        Self {
+            left,
+            top,
+            width,
+            height,
+        }
     }
 }
 
@@ -70,14 +72,14 @@ pub trait Input {
 struct Component<T: Render + Input> {
     pub should_render: bool,
     pub bounding_box: BoundingBox,
-    pub component: T
+    pub component: T,
 }
 
 impl<T: Render + Input> Component<T> {
     pub fn new(component: T) -> Self {
         Self {
             should_render: true,
-            bounding_box: BoundingBox { left: 0, top: 0, width: 0, height: 0 },
+            bounding_box: BoundingBox::default(),
             component,
         }
     }
@@ -100,21 +102,21 @@ impl<T: Render + Input> Component<T> {
 #[repr(u8)]
 enum Focus {
     FeedPane,
-    TweetPane
+    TweetPane,
 }
 
 impl Focus {
     pub fn next(&self) -> Self {
         match self {
             Self::FeedPane => Self::TweetPane,
-            Self::TweetPane => Self::FeedPane
+            Self::TweetPane => Self::FeedPane,
         }
     }
 
     pub fn prev(&self) -> Self {
         match self {
             Self::FeedPane => Self::TweetPane,
-            Self::TweetPane => Self::FeedPane
+            Self::TweetPane => Self::FeedPane,
         }
     }
 }
@@ -123,7 +125,10 @@ impl Focus {
 pub struct UI {
     stdout: Stdout,
     mode: Mode,
-    events: (UnboundedSender<InternalEvent>, UnboundedReceiver<InternalEvent>),
+    events: (
+        UnboundedSender<InternalEvent>,
+        UnboundedReceiver<InternalEvent>,
+    ),
     feed_pane: Component<FeedPane>,
     tweet_pane: Component<TweetPane>,
     bottom_bar: Component<BottomBar>,
@@ -199,7 +204,7 @@ impl UI {
 
         let focus = match self.focus {
             Focus::FeedPane => self.feed_pane.get_cursor(),
-            Focus::TweetPane => self.tweet_pane.get_cursor()
+            Focus::TweetPane => self.tweet_pane.get_cursor(),
         };
         queue!(&self.stdout, cursor::MoveTo(focus.0, focus.1))?;
         self.stdout.flush()?;
@@ -272,12 +277,14 @@ impl UI {
                 self.feed_pane.should_render = true;
                 self.bottom_bar.should_render = true;
                 self.render().await?;
-            },
+            }
             InternalEvent::SelectTweet(tweet_id) => {
-                self.tweet_pane.component.set_selected_tweet_id(Some(tweet_id));
+                self.tweet_pane
+                    .component
+                    .set_selected_tweet_id(Some(tweet_id));
                 self.tweet_pane.should_render = true;
                 self.render().await?;
-            },
+            }
             InternalEvent::LogTweet(tweet_id) => {
                 {
                     let tweets = self.tweets.lock().unwrap();
@@ -287,7 +294,7 @@ impl UI {
 
                 let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
                 subshell.wait()?;
-            },
+            }
             InternalEvent::LogError(err) => {
                 self.log_message(err.to_string().as_str())?;
             }
@@ -303,11 +310,11 @@ impl UI {
                     self.tweet_pane.should_render = true;
                     self.bottom_bar.should_render = true;
                     self.render().await?
-                },
+                }
                 KeyCode::Tab => {
                     self.focus = self.focus.next();
                     self.render().await?
-                },
+                }
                 KeyCode::Char('h') => self.log_message("hello")?,
                 KeyCode::Char('n') => {
                     self.do_load_page_of_tweets(false);
@@ -318,7 +325,7 @@ impl UI {
                 }
                 _ => match self.focus {
                     Focus::FeedPane => self.feed_pane.component.handle_key_event(key_event),
-                    Focus::TweetPane => self.tweet_pane.component.handle_key_event(key_event)
+                    Focus::TweetPane => self.tweet_pane.component.handle_key_event(key_event),
                 },
             },
             Event::Resize(cols, rows) => self.resize(cols, rows),

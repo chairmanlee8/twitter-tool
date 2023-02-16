@@ -1,15 +1,14 @@
 use crate::twitter_client::api;
-use crate::ui::{BoundingBox, Component, Input, Render};
+use crate::ui::{BoundingBox, Input, Render};
 use anyhow::Result;
-use crossterm::style::Color;
+use crossterm::event::KeyEvent;
 use crossterm::terminal::{self, ClearType};
 use crossterm::{cursor, queue, style};
-use crossterm::event::KeyEvent;
 use regex::Regex;
-use unicode_segmentation::UnicodeSegmentation;
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::io::Stdout;
+use std::sync::{Arc, Mutex};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct TweetPane {
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
@@ -20,7 +19,7 @@ impl TweetPane {
     pub fn new(tweets: &Arc<Mutex<HashMap<String, api::Tweet>>>) -> Self {
         Self {
             tweets: tweets.clone(),
-            selected_tweet_id: None
+            selected_tweet_id: None,
         }
     }
 
@@ -31,7 +30,12 @@ impl TweetPane {
 
 impl Render for TweetPane {
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
-        let BoundingBox { left, top, width, height } = bounding_box;
+        let BoundingBox {
+            left,
+            top,
+            width,
+            height,
+        } = bounding_box;
 
         if let Some(tweet_id) = &self.selected_tweet_id {
             let re_newlines = Regex::new(r"[\r\n]+").unwrap();
@@ -85,7 +89,7 @@ impl Render for TweetPane {
 }
 
 impl Input for TweetPane {
-    fn handle_key_event(&mut self, event: KeyEvent) {
+    fn handle_key_event(&mut self, _event: KeyEvent) {
         todo!()
     }
 

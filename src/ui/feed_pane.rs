@@ -1,14 +1,14 @@
-use std::cmp::{max, min};
 use crate::twitter_client::api;
-use crate::ui::{BoundingBox, Component, Input, InternalEvent, Render};
+use crate::ui::{BoundingBox, Input, InternalEvent, Render};
 use anyhow::Result;
+use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::{self, Color};
 use crossterm::{cursor, queue};
 use regex::Regex;
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::io::Stdout;
 use std::sync::{Arc, Mutex};
-use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc::UnboundedSender;
 use unicode_truncate::UnicodeTruncateStr;
 
@@ -22,16 +22,18 @@ pub struct FeedPane {
 }
 
 impl FeedPane {
-    pub fn new(events: &UnboundedSender<InternalEvent>,
-               tweets: &Arc<Mutex<HashMap<String, api::Tweet>>>,
-               tweets_reverse_chronological: &Arc<Mutex<Vec<String>>>) -> Self {
+    pub fn new(
+        events: &UnboundedSender<InternalEvent>,
+        tweets: &Arc<Mutex<HashMap<String, api::Tweet>>>,
+        tweets_reverse_chronological: &Arc<Mutex<Vec<String>>>,
+    ) -> Self {
         Self {
             events: events.clone(),
             tweets: tweets.clone(),
             tweets_reverse_chronological: tweets_reverse_chronological.clone(),
             tweets_scroll_offset: 0,
             tweets_selected_index: 0,
-            last_known_height: 0
+            last_known_height: 0,
         }
     }
 
@@ -44,7 +46,9 @@ impl FeedPane {
         if self.tweets_selected_index != new_index {
             self.tweets_selected_index = new_index;
             let tweet_id = &tweets_reverse_chronological[new_index];
-            self.events.send(InternalEvent::SelectTweet(tweet_id.clone())).unwrap();
+            self.events
+                .send(InternalEvent::SelectTweet(tweet_id.clone()))
+                .unwrap();
         }
 
         if new_index < self.tweets_scroll_offset {
@@ -69,7 +73,9 @@ impl Render for FeedPane {
 
         // adjust scroll_offset to new height if necessary
         if self.tweets_selected_index - self.tweets_scroll_offset >= (height as usize) {
-            self.tweets_scroll_offset = self.tweets_selected_index.saturating_sub((height - 1) as usize);
+            self.tweets_scroll_offset = self
+                .tweets_selected_index
+                .saturating_sub((height - 1) as usize);
         }
 
         for i in 0..height {
@@ -119,15 +125,20 @@ impl Input for FeedPane {
             KeyCode::Char('i') => {
                 let feed = self.tweets_reverse_chronological.lock().unwrap();
                 let selected_id = &feed[self.tweets_selected_index];
-                self.events.send(InternalEvent::LogTweet(selected_id.clone())).unwrap();
-            },
-            _ => ()
+                self.events
+                    .send(InternalEvent::LogTweet(selected_id.clone()))
+                    .unwrap();
+            }
+            _ => (),
         }
     }
 
     fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16) {
         let BoundingBox { left, top, .. } = bounding_box;
-        return (left + 16, top + (self.tweets_selected_index - self.tweets_scroll_offset) as u16)
+        return (
+            left + 16,
+            top + (self.tweets_selected_index - self.tweets_scroll_offset) as u16,
+        );
     }
 }
 

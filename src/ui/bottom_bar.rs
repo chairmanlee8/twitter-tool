@@ -1,10 +1,9 @@
-use crate::twitter_client::api;
 use crate::ui::{BoundingBox, Input, Render};
 use anyhow::Result;
+use crossterm::event::KeyEvent;
 use crossterm::style::Color;
 use crossterm::{cursor, queue, style};
-use std::io::{stdout, Stdout, Write};
-use crossterm::event::KeyEvent;
+use std::io::{Stdout, Write};
 use std::sync::{Arc, Mutex};
 
 pub struct BottomBar {
@@ -14,7 +13,7 @@ pub struct BottomBar {
 impl BottomBar {
     pub fn new(tweets_reverse_chronological: &Arc<Mutex<Vec<String>>>) -> Self {
         Self {
-            tweets_reverse_chronological: tweets_reverse_chronological.clone()
+            tweets_reverse_chronological: tweets_reverse_chronological.clone(),
         }
     }
 }
@@ -27,10 +26,7 @@ impl Render for BottomBar {
         queue!(stdout, cursor::MoveTo(bounding_box.left, bounding_box.top))?;
         queue!(stdout, style::SetForegroundColor(Color::Black))?;
         queue!(stdout, style::SetBackgroundColor(Color::White))?;
-        queue!(
-            stdout,
-            style::Print(format!("{feed_length} tweets"))
-        )?;
+        queue!(stdout, style::Print(format!("{feed_length} tweets")))?;
         queue!(stdout, style::ResetColor)?;
 
         stdout.flush()?;
@@ -39,11 +35,11 @@ impl Render for BottomBar {
 }
 
 impl Input for BottomBar {
-    fn handle_key_event(&mut self, event: KeyEvent) {
+    fn handle_key_event(&mut self, _event: KeyEvent) {
         todo!()
     }
 
-    fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16) {
+    fn get_cursor(&self, _bounding_box: BoundingBox) -> (u16, u16) {
         todo!()
     }
 }
