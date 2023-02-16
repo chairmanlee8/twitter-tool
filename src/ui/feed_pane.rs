@@ -120,8 +120,6 @@ impl Input for FeedPane {
     }
 }
 
-impl Component for FeedPane {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

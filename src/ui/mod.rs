@@ -32,6 +32,7 @@ pub enum Mode {
     Interactive,
 }
 
+// CR: deprecate
 pub struct Layout {
     pub stdout: Stdout,
     pub screen_cols: u16,
@@ -67,16 +68,14 @@ pub trait Input {
 
 // CR-someday: pub trait Animate (or maybe combine with Render)
 
-pub trait Component: Render + Input {}
-
-struct ShouldRender<T: Component> {
+struct Component<T: Render + Input> {
     pub should_render: bool,
     pub component: T
 }
 
-impl<T: Component> ShouldRender<T> {
+impl<T: Render + Input> Component<T> {
     pub fn new(component: T) -> Self {
-        ShouldRender {
+        Self {
             should_render: true,
             component,
         }
@@ -88,8 +87,9 @@ pub struct UI {
     mode: Mode,
     layout: Layout,
     events: (UnboundedSender<InternalEvent>, UnboundedReceiver<InternalEvent>),
-    feed_pane: ShouldRender<FeedPane>,
-    tweet_pane: ShouldRender<TweetPane>,
+    feed_pane: Component<FeedPane>,
+    tweet_pane: Component<TweetPane>,
+    bottom_bar: Component<BottomBar>,
     focus_index: usize,
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
@@ -108,7 +108,7 @@ impl UI {
 
         let feed_pane = FeedPane::new(&tx, &tweets, &tweets_reverse_chronological);
         let tweet_pane = TweetPane::new(&tweets);
-        let bottom_bar = BottomBar;
+        let bottom_bar = BottomBar::new(&tweets_reverse_chronological);
 
         Self {
             mode: Mode::Log,
@@ -120,8 +120,9 @@ impl UI {
                 tweet_pane_width: cols / 2,
             },
             events: (tx, rx),
-            feed_pane: ShouldRender::new(feed_pane),
-            tweet_pane: ShouldRender::new(tweet_pane),
+            feed_pane: Component::new(feed_pane),
+            tweet_pane: Component::new(tweet_pane),
+            bottom_bar: Component::new(bottom_bar),
             focus_index: 0,
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
@@ -160,9 +161,10 @@ impl UI {
             self.feed_pane.component.render(
                 &mut self.layout.stdout,
                 BoundingBox {
-                    left: 0, top: 0,
+                    left: 0,
+                    top: 0,
                     width: self.layout.feed_pane_width - 1,
-                    height: self.layout.screen_rows - 3
+                    height: self.layout.screen_rows - 2
                 }
             )?;
             self.feed_pane.should_render = false;
@@ -175,32 +177,23 @@ impl UI {
                     left: self.layout.feed_pane_width + 1,
                     top: 0,
                     width: self.layout.tweet_pane_width,
-                    height: self.layout.screen_rows - 3
+                    height: self.layout.screen_rows - 2
                 }
             )?;
             self.tweet_pane.should_render = false;
         }
 
-        {
-            // let tweets = self.tweets.lock().await;
-            // let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
-            //
-            // if self.tweet_pane.should_render {
-            //     self.tweet_pane.component.render(
-            //         &self.layout,
-            //         &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
-            //     )?;
-            //     self.tweet_pane.should_render = false;
-            // }
-            //
-            // if self.bottom_bar.should_render {
-            //     self.bottom_bar.component.render(
-            //         &self.layout,
-            //         &tweets_reverse_chronological,
-            //         self.tweets_selected_index,
-            //     )?;
-            //     self.bottom_bar.should_render = false;
-            // }
+        if self.bottom_bar.should_render {
+            self.bottom_bar.component.render(
+                &mut self.layout.stdout,
+                BoundingBox {
+                    left: 0,
+                    top: self.layout.screen_rows - 1,
+                    width: self.layout.screen_cols,
+                    height: 1
+                }
+            )?;
+            self.bottom_bar.should_render = false;
         }
 
         let mut stdout = &self.layout.stdout;
@@ -288,6 +281,7 @@ impl UI {
         match event {
             InternalEvent::FeedUpdated => {
                 self.feed_pane.should_render = true;
+                self.bottom_bar.should_render = true;
                 self.render().await?;
             },
             InternalEvent::SelectTweet(tweet_id) => {
@@ -307,8 +301,8 @@ impl UI {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Esc => {
                     self.feed_pane.should_render = true;
-                    // self.tweet_pane.should_render = true;
-                    // self.bottom_bar.should_render = true;
+                    self.tweet_pane.should_render = true;
+                    self.bottom_bar.should_render = true;
                     self.render().await?
                 }
                 // KeyCode::Up => self.move_selected_index(-1).await?,

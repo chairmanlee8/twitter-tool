@@ -94,8 +94,6 @@ impl Input for TweetPane {
     }
 }
 
-impl Component for TweetPane {}
-
 fn break_lines(text: &str, line_width: usize) -> Vec<String> {
     // CR: why does this work?
     UnicodeSegmentation::graphemes(text, true)
