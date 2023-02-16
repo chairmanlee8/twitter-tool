@@ -154,8 +154,6 @@ impl UI {
             let tweets = self.tweets.lock().await;
             let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
 
-            // TODO: we might have enough to make Component trait now, that way we can keep
-            // dirty/focus return per widget
             if self.dirty.contains(Dirty::FEED_PANE) {
                 render_feed_pane(
                     &self.layout,

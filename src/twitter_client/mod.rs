@@ -52,7 +52,6 @@ impl TwitterClient {
         Ok(())
     }
 
-    // CR: type Error = Error + Send + Sync?
     pub async fn authorize(&mut self) -> Result<()> {
         let oauth_client = BasicClient::new(
             ClientId::new(self.twitter_client_id.clone()),
