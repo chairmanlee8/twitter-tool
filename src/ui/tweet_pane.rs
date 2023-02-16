@@ -52,7 +52,7 @@ impl Render for TweetPane {
             let tweet_paragraphs: Vec<&str> = re_newlines.split(&tweet.text).collect();
             let tweet_lines: Vec<String> = tweet_paragraphs
                 .iter()
-                .map(|p| break_lines(p, width as usize))
+                .map(|p| break_lines(p, (width - 1) as usize))
                 .flatten()
                 .collect();
 

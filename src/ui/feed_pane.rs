@@ -18,6 +18,7 @@ pub struct FeedPane {
     tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
     tweets_scroll_offset: usize,
     tweets_selected_index: usize,
+    last_known_height: u16,
 }
 
 impl FeedPane {
@@ -30,6 +31,7 @@ impl FeedPane {
             tweets_reverse_chronological: tweets_reverse_chronological.clone(),
             tweets_scroll_offset: 0,
             tweets_selected_index: 0,
+            last_known_height: 0
         }
     }
 
@@ -40,16 +42,17 @@ impl FeedPane {
         let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
 
         if self.tweets_selected_index != new_index {
+            self.tweets_selected_index = new_index;
             let tweet_id = &tweets_reverse_chronological[new_index];
             self.events.send(InternalEvent::SelectTweet(tweet_id.clone())).unwrap();
         }
 
-        self.tweets_selected_index = new_index;
-        self.tweets_scroll_offset = min(self.tweets_scroll_offset, new_index);
-
-        // CR: this updates too frequently, but we don't _know_ when a bottom re-render becomes
-        // necessary we could if we kept to "last known height" as a var from render
-        self.events.send(InternalEvent::FeedUpdated).unwrap();
+        if new_index < self.tweets_scroll_offset {
+            self.tweets_scroll_offset = new_index;
+            self.events.send(InternalEvent::FeedRepaint).unwrap();
+        } else if new_index >= self.tweets_scroll_offset + (self.last_known_height as usize) {
+            self.events.send(InternalEvent::FeedRepaint).unwrap();
+        }
     }
 }
 
@@ -61,6 +64,8 @@ impl Render for FeedPane {
 
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
+
+        self.last_known_height = height;
 
         // adjust scroll_offset to new height if necessary
         if self.tweets_selected_index - self.tweets_scroll_offset >= (height as usize) {
@@ -111,6 +116,11 @@ impl Input for FeedPane {
         match event.code {
             KeyCode::Up => self.move_selected_index(-1),
             KeyCode::Down => self.move_selected_index(1),
+            KeyCode::Char('i') => {
+                let feed = self.tweets_reverse_chronological.lock().unwrap();
+                let selected_id = &feed[self.tweets_selected_index];
+                self.events.send(InternalEvent::LogTweet(selected_id.clone())).unwrap();
+            },
             _ => ()
         }
     }

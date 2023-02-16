@@ -16,7 +16,6 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures_util::{FutureExt, StreamExt};
-//use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{stdout, Stdout, Write};
@@ -34,8 +33,9 @@ pub enum Mode {
 
 #[derive(Debug)]
 pub enum InternalEvent {
-    FeedUpdated,
+    FeedRepaint,
     SelectTweet(String),
+    LogTweet(String),
     LogError(Error),
 }
 
@@ -206,20 +206,6 @@ impl UI {
         Ok(())
     }
 
-    // pub async fn log_selected_tweet(&mut self) -> Result<()> {
-    //     {
-    //         let tweets = self.tweets.lock().unwrap();
-    //         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
-    //         let tweet_id = &tweets_reverse_chronological[self.tweets_selected_index];
-    //         let tweet = &tweets[tweet_id];
-    //         fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
-    //     }
-    //
-    //     let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
-    //     subshell.wait()?;
-    //     Ok(())
-    // }
-
     pub fn log_message(&mut self, message: &str) -> Result<()> {
         self.set_mode(Mode::Log)?;
         println!("{message}\r");
@@ -274,7 +260,7 @@ impl UI {
             }
             .await
             {
-                Ok(()) => event_sender.send(InternalEvent::FeedUpdated),
+                Ok(()) => event_sender.send(InternalEvent::FeedRepaint),
                 Err(error) => event_sender.send(InternalEvent::LogError(error)),
             }
         });
@@ -282,7 +268,7 @@ impl UI {
 
     async fn handle_internal_event(&mut self, event: InternalEvent) -> Result<()> {
         match event {
-            InternalEvent::FeedUpdated => {
+            InternalEvent::FeedRepaint => {
                 self.feed_pane.should_render = true;
                 self.bottom_bar.should_render = true;
                 self.render().await?;
@@ -291,6 +277,16 @@ impl UI {
                 self.tweet_pane.component.set_selected_tweet_id(Some(tweet_id));
                 self.tweet_pane.should_render = true;
                 self.render().await?;
+            },
+            InternalEvent::LogTweet(tweet_id) => {
+                {
+                    let tweets = self.tweets.lock().unwrap();
+                    let tweet = &tweets[&tweet_id];
+                    fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
+                }
+
+                let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
+                subshell.wait()?;
             },
             InternalEvent::LogError(err) => {
                 self.log_message(err.to_string().as_str())?;
@@ -312,10 +308,7 @@ impl UI {
                     self.focus = self.focus.next();
                     self.render().await?
                 },
-                // KeyCode::Up => self.move_selected_index(-1).await?,
-                // KeyCode::Down => self.move_selected_index(1).await?,
                 KeyCode::Char('h') => self.log_message("hello")?,
-                // KeyCode::Char('i') => self.log_selected_tweet().await?,
                 KeyCode::Char('n') => {
                     self.do_load_page_of_tweets(false);
                 }
@@ -323,8 +316,9 @@ impl UI {
                     reset();
                     process::exit(0);
                 }
-                _ => {
-                    self.feed_pane.component.handle_key_event(key_event);
+                _ => match self.focus {
+                    Focus::FeedPane => self.feed_pane.component.handle_key_event(key_event),
+                    Focus::TweetPane => self.tweet_pane.component.handle_key_event(key_event)
                 },
             },
             Event::Resize(cols, rows) => self.resize(cols, rows),
