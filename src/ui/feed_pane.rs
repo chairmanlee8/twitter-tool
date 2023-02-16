@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use crate::twitter_client::api;
-use crate::ui::{BoundingBox, Component, Input, InternalEvent, Layout, Render};
+use crate::ui::{BoundingBox, Component, Input, InternalEvent, Render};
 use anyhow::Result;
 use crossterm::style::{self, Color};
 use crossterm::{cursor, queue};

@@ -1,5 +1,5 @@
 use crate::twitter_client::api;
-use crate::ui::{BoundingBox, Input, Layout, Render};
+use crate::ui::{BoundingBox, Input, Render};
 use anyhow::Result;
 use crossterm::style::Color;
 use crossterm::{cursor, queue, style};

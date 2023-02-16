@@ -158,7 +158,7 @@ impl UI {
     pub fn resize(&mut self, cols: u16, rows: u16) {
         let half_width = cols / 2;
         self.feed_pane.bounding_box = BoundingBox::new(0, 0, half_width - 1, rows - 2);
-        self.tweet_pane.bounding_box = BoundingBox::new(hald_width + 1, 0, half_width, rows - 2);
+        self.tweet_pane.bounding_box = BoundingBox::new(half_width + 1, 0, half_width, rows - 2);
         self.bottom_bar.bounding_box = BoundingBox::new(0, rows - 1, cols, 1);
     }
 
