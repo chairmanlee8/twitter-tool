@@ -14,6 +14,7 @@ impl TweetPane {
         let mut stdout = &layout.stdout;
 
         let inner_width = layout.tweet_pane_width - 1;
+        let inner_left = layout.screen_cols - inner_width;
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
 
@@ -34,37 +35,25 @@ impl TweetPane {
             .flatten()
             .collect();
 
-        queue!(
-            stdout,
-            cursor::MoveTo(layout.screen_cols - inner_width, row)
-        )?;
+        queue!(stdout, cursor::MoveTo(inner_left, row))?;
         queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
         queue!(stdout, style::Print(&tweet_time))?;
         row += 1;
 
-        queue!(
-            stdout,
-            cursor::MoveTo(layout.screen_cols - inner_width, row)
-        )?;
+        queue!(stdout, cursor::MoveTo(inner_left, row))?;
         queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
         queue!(stdout, style::Print(&tweet_author))?;
         row += 2;
 
         for tweet_line in tweet_lines {
-            queue!(
-                stdout,
-                cursor::MoveTo(layout.screen_cols - inner_width, row)
-            )?;
+            queue!(stdout, cursor::MoveTo(inner_left, row))?;
             queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
             queue!(stdout, style::Print(&tweet_line))?;
             row += 1;
         }
 
         while row < layout.screen_rows {
-            queue!(
-                stdout,
-                cursor::MoveTo(layout.screen_cols - inner_width, row)
-            )?;
+            queue!(stdout, cursor::MoveTo(inner_left, row))?;
             queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
             row += 1;
         }
