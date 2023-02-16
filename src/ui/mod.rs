@@ -3,11 +3,10 @@ mod feed_pane;
 mod tweet_pane;
 
 use crate::twitter_client::{api, TwitterClient};
-use crate::ui::bottom_bar::render_bottom_bar;
-use crate::ui::feed_pane::render_feed_pane;
+use crate::ui::bottom_bar::BottomBar;
+use crate::ui::feed_pane::FeedPane;
 use crate::ui::tweet_pane::TweetPane;
 use anyhow::{anyhow, Context, Error, Result};
-use bitflags::bitflags;
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode};
 use crossterm::terminal;
@@ -47,16 +46,22 @@ enum InternalEvent {
     LogError(Error),
 }
 
-bitflags! {
-    struct Dirty: u8 {
-        const FEED_PANE = 1 << 0;
-        const TWEET_PANE = 1 << 1;
-        const BOTTOM_BAR = 1 << 2;
+struct ShouldRender<T> {
+    pub should_render: bool,
+    pub component: T,
+}
+
+impl<T> ShouldRender<T> {
+    pub fn new(component: T) -> Self {
+        ShouldRender {
+            should_render: true,
+            component,
+        }
     }
 }
 
-// CR-soon: pub trait Animate
-// CR-soon: pub trait Focus
+// CR-someday: pub trait Animate
+// CR-someday: pub trait Focus
 
 // TODO deep dive into str vs String
 pub struct UI {
@@ -66,7 +71,6 @@ pub struct UI {
         UnboundedSender<InternalEvent>,
         UnboundedReceiver<InternalEvent>,
     ),
-    dirty: Dirty,
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
@@ -74,7 +78,9 @@ pub struct UI {
     tweets_page_token: Arc<Mutex<Option<String>>>,
     tweets_view_offset: usize,
     tweets_selected_index: usize,
-    tweet_pane: TweetPane,
+    feed_pane: ShouldRender<FeedPane>,
+    tweet_pane: ShouldRender<TweetPane>,
+    bottom_bar: ShouldRender<BottomBar>,
 }
 
 impl UI {
@@ -92,7 +98,6 @@ impl UI {
                 tweet_pane_width: cols / 2,
             },
             events: (tx, rx),
-            dirty: Dirty::all(),
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
             tweets: Arc::new(Mutex::new(HashMap::new())),
@@ -100,7 +105,9 @@ impl UI {
             tweets_page_token: Arc::new(Mutex::new(None)),
             tweets_view_offset: 0,
             tweets_selected_index: 0,
-            tweet_pane: TweetPane,
+            feed_pane: ShouldRender::new(FeedPane),
+            tweet_pane: ShouldRender::new(TweetPane),
+            bottom_bar: ShouldRender::new(BottomBar),
         }
     }
 
@@ -140,13 +147,14 @@ impl UI {
 
             if new_index < view_top {
                 self.tweets_view_offset = new_index;
-                self.dirty = Dirty::all();
+                self.feed_pane.should_render = true;
             } else if new_index > view_bottom {
                 self.tweets_view_offset = max(0, new_index - view_height);
-                self.dirty = Dirty::all();
-            } else {
-                self.dirty.insert(Dirty::BOTTOM_BAR | Dirty::TWEET_PANE);
+                self.feed_pane.should_render = true;
             }
+
+            self.tweet_pane.should_render = true;
+            self.bottom_bar.should_render = true;
         }
 
         self.render().await
@@ -159,31 +167,32 @@ impl UI {
             let tweets = self.tweets.lock().await;
             let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
 
-            if self.dirty.contains(Dirty::FEED_PANE) {
-                render_feed_pane(
+            if self.feed_pane.should_render {
+                self.feed_pane.component.render(
                     &self.layout,
                     &tweets,
                     &tweets_reverse_chronological,
                     self.tweets_view_offset,
                 )?;
+                self.feed_pane.should_render = false;
             }
 
-            if self.dirty.contains(Dirty::TWEET_PANE) {
-                self.tweet_pane.render(
+            if self.tweet_pane.should_render {
+                self.tweet_pane.component.render(
                     &self.layout,
                     &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
                 )?;
+                self.tweet_pane.should_render = false;
             }
 
-            if self.dirty.contains(Dirty::BOTTOM_BAR) {
-                render_bottom_bar(
+            if self.bottom_bar.should_render {
+                self.bottom_bar.component.render(
                     &self.layout,
                     &tweets_reverse_chronological,
                     self.tweets_selected_index,
                 )?;
+                self.bottom_bar.should_render = false;
             }
-
-            self.dirty = Dirty::empty();
         }
 
         let mut stdout = &self.layout.stdout;
@@ -275,7 +284,7 @@ impl UI {
     async fn handle_internal_event(&mut self, event: InternalEvent) -> Result<()> {
         match event {
             InternalEvent::TweetsFeedUpdated => {
-                self.dirty.insert(Dirty::TWEET_PANE);
+                self.tweet_pane.should_render = true;
                 self.render().await?;
             }
             InternalEvent::LogError(err) => {
@@ -289,7 +298,9 @@ impl UI {
         match event {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Esc => {
-                    self.dirty = Dirty::all();
+                    self.feed_pane.should_render = true;
+                    self.tweet_pane.should_render = true;
+                    self.bottom_bar.should_render = true;
                     self.render().await?
                 }
                 KeyCode::Up => self.move_selected_index(-1).await?,

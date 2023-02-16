@@ -4,7 +4,7 @@
 - word truncation on tweets pane, plus triple dot
 - show threads as [n]
 - consider moving to GUI already? or maybe see how far unicode gfx can go
-- page up/page down tweets
+- page up/page down tweets (alt, left-[ right-])
 - index tweets? for vim style jump
 - priority accounts (highlight, show condensed listing)
 - adjust timestamps to local tz

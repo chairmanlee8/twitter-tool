@@ -1,57 +1,63 @@
 use crate::twitter_client::api;
 use crate::ui::Layout;
+use anyhow::Result;
 use crossterm::style::{self, Color};
-use crossterm::{cursor, queue, Result};
+use crossterm::{cursor, queue};
 use regex::Regex;
 use std::collections::HashMap;
 use unicode_truncate::UnicodeTruncateStr;
 
-pub fn render_feed_pane(
-    layout: &Layout,
-    tweets: &HashMap<String, api::Tweet>,
-    tweets_reverse_chronological: &Vec<String>,
-    view_offset: usize,
-) -> Result<()> {
-    let mut stdout = &layout.stdout;
+pub struct FeedPane;
 
-    let inner_width = layout.feed_pane_width - 2;
-    let re_newlines = Regex::new(r"[\r\n]+").unwrap();
-    let str_unknown = String::from("[unknown]");
+impl FeedPane {
+    pub fn render(
+        &self,
+        layout: &Layout,
+        tweets: &HashMap<String, api::Tweet>,
+        tweets_reverse_chronological: &Vec<String>,
+        view_offset: usize,
+    ) -> Result<()> {
+        let mut stdout = &layout.stdout;
 
-    for i in 0..(layout.screen_rows - 2) {
-        if i > tweets_reverse_chronological.len() as u16 {
-            break;
+        let inner_width = layout.feed_pane_width - 2;
+        let re_newlines = Regex::new(r"[\r\n]+").unwrap();
+        let str_unknown = String::from("[unknown]");
+
+        for i in 0..(layout.screen_rows - 2) {
+            if i > tweets_reverse_chronological.len() as u16 {
+                break;
+            }
+
+            let tweet_id = &tweets_reverse_chronological[view_offset + (i as usize)];
+            let tweet = &tweets.get(tweet_id).unwrap();
+            let mut col_offset: u16 = 0;
+
+            let tweet_time = tweet.created_at.format("%m-%d %H:%M:%S");
+            let tweet_time = format!("{tweet_time}  > ");
+            queue!(stdout, cursor::MoveTo(col_offset, i))?;
+            queue!(stdout, style::SetForegroundColor(Color::DarkGrey))?;
+            queue!(stdout, style::Print(&tweet_time))?;
+            queue!(stdout, style::ResetColor)?;
+            col_offset += (tweet_time.len() + 1) as u16;
+
+            // CR: possible to cast from String to &str?
+            let tweet_author = tweet.author_username.as_ref().unwrap_or(&str_unknown);
+            let tweet_author = format!("@{tweet_author}");
+            queue!(stdout, cursor::MoveTo(col_offset, i))?;
+            queue!(stdout, style::SetForegroundColor(Color::DarkCyan))?;
+            queue!(stdout, style::Print(&tweet_author))?;
+            queue!(stdout, style::ResetColor)?;
+            col_offset += (&tweet_author.len() + 1) as u16;
+
+            let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
+            let (truncated, _) =
+                formatted.unicode_truncate((inner_width.saturating_sub(col_offset)) as usize);
+            queue!(stdout, cursor::MoveTo(col_offset, i))?;
+            queue!(stdout, style::Print(truncated))?;
         }
 
-        let tweet_id = &tweets_reverse_chronological[view_offset + (i as usize)];
-        let tweet = &tweets.get(tweet_id).unwrap();
-        let mut col_offset: u16 = 0;
-
-        let tweet_time = tweet.created_at.format("%m-%d %H:%M:%S");
-        let tweet_time = format!("{tweet_time}  > ");
-        queue!(stdout, cursor::MoveTo(col_offset, i))?;
-        queue!(stdout, style::SetForegroundColor(Color::DarkGrey))?;
-        queue!(stdout, style::Print(&tweet_time))?;
-        queue!(stdout, style::ResetColor)?;
-        col_offset += (tweet_time.len() + 1) as u16;
-
-        // CR: possible to cast from String to &str?
-        let tweet_author = tweet.author_username.as_ref().unwrap_or(&str_unknown);
-        let tweet_author = format!("@{tweet_author}");
-        queue!(stdout, cursor::MoveTo(col_offset, i))?;
-        queue!(stdout, style::SetForegroundColor(Color::DarkCyan))?;
-        queue!(stdout, style::Print(&tweet_author))?;
-        queue!(stdout, style::ResetColor)?;
-        col_offset += (&tweet_author.len() + 1) as u16;
-
-        let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
-        let (truncated, _) =
-            formatted.unicode_truncate((inner_width.saturating_sub(col_offset)) as usize);
-        queue!(stdout, cursor::MoveTo(col_offset, i))?;
-        queue!(stdout, style::Print(truncated))?;
+        Ok(())
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
