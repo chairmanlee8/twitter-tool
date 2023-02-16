@@ -1,11 +1,11 @@
 mod bottom_bar;
-mod tweet_pane;
 mod feed_pane;
+mod tweet_pane;
 
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::render_bottom_bar;
-use crate::ui::tweet_pane::render_tweet_pane;
 use crate::ui::feed_pane::render_feed_pane;
+use crate::ui::tweet_pane::render_tweet_pane;
 use anyhow::{anyhow, Context, Error, Result};
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode};
@@ -37,7 +37,7 @@ pub struct Layout {
     pub screen_cols: u16,
     pub screen_rows: u16,
     pub feed_pane_width: u16,
-    pub tweet_pane_width: u16
+    pub tweet_pane_width: u16,
 }
 
 #[derive(Debug)]
@@ -75,7 +75,7 @@ impl UI {
                 screen_cols: cols,
                 screen_rows: rows,
                 feed_pane_width: cols / 2,
-                tweet_pane_width: cols / 2
+                tweet_pane_width: cols / 2,
             },
             events: (tx, rx),
             twitter_client: Arc::new(twitter_client),
