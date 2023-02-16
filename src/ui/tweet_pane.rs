@@ -33,25 +33,37 @@ pub fn render_tweet_pane(context: &Layout, pane_width: u16, tweet: &api::Tweet) 
         .flatten()
         .collect();
 
-    queue!(stdout, cursor::MoveTo(context.screen_cols - pane_width - 1, row))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+    )?;
     queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
     queue!(stdout, style::Print(&tweet_time))?;
     row += 1;
 
-    queue!(stdout, cursor::MoveTo(context.screen_cols - pane_width - 1, row))?;
+    queue!(
+        stdout,
+        cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+    )?;
     queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
     queue!(stdout, style::Print(&tweet_author))?;
     row += 2;
 
     for tweet_line in tweet_lines {
-        queue!(stdout, cursor::MoveTo(context.screen_cols - pane_width - 1, row))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+        )?;
         queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
         queue!(stdout, style::Print(&tweet_line))?;
         row += 1;
     }
 
     while row < context.screen_rows {
-        queue!(stdout, cursor::MoveTo(context.screen_cols - pane_width - 1, row))?;
+        queue!(
+            stdout,
+            cursor::MoveTo(context.screen_cols - pane_width - 1, row)
+        )?;
         queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
         row += 1;
     }

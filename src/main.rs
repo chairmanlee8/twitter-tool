@@ -1,9 +1,9 @@
+use anyhow::Result;
 use clap::Parser;
 use dotenvy::dotenv;
 use std::env;
 use twitter_tool_rs::twitter_client::TwitterClient;
 use twitter_tool_rs::ui;
-use anyhow::Result;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -33,5 +33,6 @@ async fn main() -> Result<()> {
     println!("{me:?}");
 
     let mut ui = ui::UI::new(twitter_client, me);
+    ui.do_load_page_of_tweets(true);
     ui.event_loop().await
 }

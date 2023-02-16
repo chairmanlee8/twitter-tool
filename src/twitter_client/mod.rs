@@ -1,5 +1,6 @@
 pub mod api;
 
+use anyhow::{anyhow, Result};
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Method, Request};
 use hyper_tls::HttpsConnector;
@@ -11,17 +12,14 @@ use oauth2::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::error::Error;
-use std::sync::{Arc, Mutex};
 use std::fs;
 use url::Url;
-use anyhow::{anyhow, Result};
 
 pub struct TwitterClient {
     https_client: Client<HttpsConnector<HttpConnector>>,
     twitter_client_id: String,
     twitter_client_secret: String,
-    access_token: Option<AccessToken>
+    access_token: Option<AccessToken>,
 }
 
 impl TwitterClient {
@@ -32,13 +30,16 @@ impl TwitterClient {
             https_client,
             twitter_client_id: twitter_client_id.to_string(),
             twitter_client_secret: twitter_client_secret.to_string(),
-            access_token: None
+            access_token: None,
         }
     }
 
     pub fn save_access_token(&self) -> Result<()> {
         // CR-soon: do we have to use serde_json, what about plain bytes
-        let access_token = self.access_token.as_ref().ok_or(anyhow!("No token to save"))?;
+        let access_token = self
+            .access_token
+            .as_ref()
+            .ok_or(anyhow!("No token to save"))?;
         let access_token = serde_json::to_string(&access_token)?;
         fs::write("./var/.access_token", access_token)?;
         Ok(())
@@ -125,7 +126,7 @@ impl TwitterClient {
     pub async fn timeline_reverse_chronological(
         &self,
         user_id: &str,
-        pagination_token: Option<&String>
+        pagination_token: Option<&String>,
     ) -> Result<(Vec<api::Tweet>, Option<String>)> {
         let access_token = self.access_token.as_ref().ok_or(anyhow!("Unauthorized"))?;
 
@@ -134,12 +135,16 @@ impl TwitterClient {
         ))?;
 
         uri.query_pairs_mut()
-            .append_pair("tweet.fields", "created_at,attachments,referenced_tweets,public_metrics,conversation_id")
+            .append_pair(
+                "tweet.fields",
+                "created_at,attachments,referenced_tweets,public_metrics,conversation_id",
+            )
             .append_pair("user.fields", "username")
             .append_pair("expansions", "author_id");
 
         if let Some(pagination_token) = pagination_token {
-            uri.query_pairs_mut().append_pair("pagination_token", pagination_token);
+            uri.query_pairs_mut()
+                .append_pair("pagination_token", pagination_token);
         }
 
         let req = Request::builder()
@@ -169,7 +174,9 @@ impl TwitterClient {
             .data
             .iter()
             .map(|tweet| api::Tweet {
-                author_username: users.get(&tweet.author_id).map(|user| user.username.clone()),
+                author_username: users
+                    .get(&tweet.author_id)
+                    .map(|user| user.username.clone()),
                 author_name: users.get(&tweet.author_id).map(|user| user.name.clone()),
                 ..tweet.clone()
             })

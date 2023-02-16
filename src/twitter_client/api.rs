@@ -40,13 +40,13 @@ pub struct Tweet {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TweetReference {
     pub r#type: String,
-    pub id: String
+    pub id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Attachments {
     pub poll_ids: Option<Vec<String>>,
-    pub media_keys: Option<Vec<String>>
+    pub media_keys: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,5 +54,5 @@ pub struct PublicMetrics {
     pub retweet_count: i32,
     pub reply_count: i32,
     pub like_count: i32,
-    pub quote_count: i32
+    pub quote_count: i32,
 }

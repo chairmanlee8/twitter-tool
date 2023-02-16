@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use crate::twitter_client::api;
 use crate::ui::Layout;
 use crossterm::style::Color;
 use crossterm::{cursor, queue, style, Result};
 use regex::Regex;
+use std::collections::HashMap;
 use std::io::stdout;
 use unicode_truncate::UnicodeTruncateStr;
 
