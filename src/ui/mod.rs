@@ -220,7 +220,6 @@ impl UI {
         Ok(())
     }
 
-    // TODO: make these threaded as well
     pub async fn load_first_page_of_tweets(&mut self) -> Result<()> {
         let mut lock = self.tweets_page_token.try_lock();
         // CR: TODO wtf is all this
@@ -259,30 +258,25 @@ impl UI {
         tokio::spawn(async move {
             match async {
                 let mut tweets_page_token = tweets_page_token.try_lock().with_context(|| "Cannot get lock")?;
-                // CR: gross
-                let page_token: Option<String> = tweets_page_token.clone();
-                if let Some(page_token) = page_token {
-                    // TODO: this is dup code
-                    let (new_tweets, page_token) = twitter_client
-                        .timeline_reverse_chronological(&twitter_user.id, Some(&page_token))
-                        .await?;
-                    let mut new_tweets_reverse_chronological: Vec<String> = Vec::new();
+                let page_token = tweets_page_token.as_ref().ok_or(anyhow!("No more pages"))?;
+                // TODO: this is dup code
+                let (new_tweets, page_token) = twitter_client
+                    .timeline_reverse_chronological(&twitter_user.id, Some(&page_token))
+                    .await?;
+                let mut new_tweets_reverse_chronological: Vec<String> = Vec::new();
 
-                    *tweets_page_token = page_token;
+                *tweets_page_token = page_token;
 
-                    // CR: TODO safe to unwrap mutex lock?
+                {
                     let mut tweets = tweets.lock().await;
                     for tweet in new_tweets {
                         new_tweets_reverse_chronological.push(tweet.id.clone());
                         tweets.insert(tweet.id.clone(), tweet);
                     }
-                    drop(tweets);
-
+                }
+                {
                     let mut tweets_reverse_chronological = tweets_reverse_chronological.lock().await;
                     tweets_reverse_chronological.append(&mut new_tweets_reverse_chronological);
-                    drop(tweets_reverse_chronological);
-                } else {
-                    return Err(anyhow!("No more pages"));
                 }
                 Ok(())
             }.await {
