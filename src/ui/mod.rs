@@ -62,7 +62,6 @@ pub struct UI {
     tweet_pane_width: u16,
 }
 
-// TODO can we split impl?
 impl UI {
     pub fn new(twitter_client: TwitterClient, twitter_user: api::User) -> Self {
         let (cols, rows) = size().unwrap();
@@ -205,15 +204,13 @@ impl UI {
     }
 
     pub async fn log_selected_tweet(&mut self) -> Result<()> {
-        let tweets = self.tweets.lock().await;
-        let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
-
-        let tweet_id = &tweets_reverse_chronological[self.tweets_selected_index];
-        let tweet = &tweets[tweet_id];
-        fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
-
-        drop(tweets_reverse_chronological);
-        drop(tweets);
+        {
+            let tweets = self.tweets.lock().await;
+            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+            let tweet_id = &tweets_reverse_chronological[self.tweets_selected_index];
+            let tweet = &tweets[tweet_id];
+            fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
+        }
 
         let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
         subshell.wait()?;
