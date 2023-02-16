@@ -43,13 +43,21 @@ pub struct Layout {
 #[derive(Debug)]
 pub enum InternalEvent {
     FeedUpdated,
+    SelectTweet(String),
     LogError(Error),
+}
+
+pub struct BoundingBox {
+    pub left: u16,
+    pub top: u16,
+    pub width: u16,
+    pub height: u16
 }
 
 pub trait Render {
     // NB: [render] takes [&mut self] since there isn't a separate notification to component that
     // their bbox changed
-    fn render(&mut self, stdout: &mut Stdout, left: u16, top: u16, width: u16, height: u16) -> Result<()>;
+    fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()>;
 }
 
 pub trait Input {
@@ -57,7 +65,7 @@ pub trait Input {
     fn get_cursor(&self) -> (u16, u16);
 }
 
-// CR-someday: pub trait Animate
+// CR-someday: pub trait Animate (or maybe combine with Render)
 
 pub trait Component: Render + Input {}
 
@@ -81,19 +89,13 @@ pub struct UI {
     layout: Layout,
     events: (UnboundedSender<InternalEvent>, UnboundedReceiver<InternalEvent>),
     feed_pane: ShouldRender<FeedPane>,
+    tweet_pane: ShouldRender<TweetPane>,
     focus_index: usize,
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
     tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
     tweets_page_token: Arc<AsyncMutex<Option<String>>>,
-    tweets_view_offset: usize,
-    tweets_selected_index: usize,
-    // CR-someday: maybe use Weak<dyn Input> here, but it runs into a gnarly type error
-    // focus: Rc<dyn Input>,
-    // feed_pane: ShouldRender<Rc<FeedPane>>,
-    // tweet_pane: ShouldRender<Rc<TweetPane>>,
-    // bottom_bar: ShouldRender<Rc<BottomBar>>,
 }
 
 impl UI {
@@ -105,7 +107,7 @@ impl UI {
         let tweets_reverse_chronological = Arc::new(Mutex::new(Vec::new()));
 
         let feed_pane = FeedPane::new(&tx, &tweets, &tweets_reverse_chronological);
-        let tweet_pane = TweetPane;
+        let tweet_pane = TweetPane::new(&tweets);
         let bottom_bar = BottomBar;
 
         Self {
@@ -119,14 +121,13 @@ impl UI {
             },
             events: (tx, rx),
             feed_pane: ShouldRender::new(feed_pane),
+            tweet_pane: ShouldRender::new(tweet_pane),
             focus_index: 0,
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
             tweets,
             tweets_reverse_chronological,
             tweets_page_token: Arc::new(AsyncMutex::new(None)),
-            tweets_view_offset: 0,
-            tweets_selected_index: 0,
         }
     }
 
@@ -152,42 +153,32 @@ impl UI {
         self.layout.screen_rows = rows;
     }
 
-    // pub async fn move_selected_index(&mut self, delta: isize) -> Result<()> {
-    //     {
-    //         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
-    //
-    //         let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
-    //         let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
-    //         let view_top = self.tweets_view_offset;
-    //         let view_height = (self.layout.screen_rows - 3) as usize;
-    //         let view_bottom = self.tweets_view_offset + view_height;
-    //
-    //         self.tweets_selected_index = new_index;
-    //
-    //         if new_index < view_top {
-    //             self.tweets_view_offset = new_index;
-    //             self.feed_pane.should_render = true;
-    //         } else if new_index > view_bottom {
-    //             self.tweets_view_offset = max(0, new_index - view_height);
-    //             self.feed_pane.should_render = true;
-    //         }
-    //
-    //         self.tweet_pane.should_render = true;
-    //         self.bottom_bar.should_render = true;
-    //     }
-    //
-    //     self.render().await
-    // }
-
     pub async fn render(&mut self) -> Result<()> {
         self.set_mode(Mode::Interactive)?;
 
         if self.feed_pane.should_render {
             self.feed_pane.component.render(
                 &mut self.layout.stdout,
-                0, 0, self.layout.screen_cols, self.layout.screen_rows
+                BoundingBox {
+                    left: 0, top: 0,
+                    width: self.layout.feed_pane_width - 1,
+                    height: self.layout.screen_rows - 3
+                }
             )?;
             self.feed_pane.should_render = false;
+        }
+
+        if self.tweet_pane.should_render {
+            self.tweet_pane.component.render(
+                &mut self.layout.stdout,
+                BoundingBox {
+                    left: self.layout.feed_pane_width + 1,
+                    top: 0,
+                    width: self.layout.tweet_pane_width,
+                    height: self.layout.screen_rows - 3
+                }
+            )?;
+            self.tweet_pane.should_render = false;
         }
 
         {
@@ -215,28 +206,23 @@ impl UI {
         let mut stdout = &self.layout.stdout;
         let focus = self.feed_pane.component.get_cursor();
         queue!(&self.layout.stdout, cursor::MoveTo(focus.0, focus.1))?;
-        //     cursor::MoveTo(
-        //         16,
-        //         (self.tweets_selected_index - self.tweets_view_offset) as u16
-        //     )
-        // )?;
         stdout.flush()?;
         Ok(())
     }
 
-    pub async fn log_selected_tweet(&mut self) -> Result<()> {
-        {
-            let tweets = self.tweets.lock().unwrap();
-            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
-            let tweet_id = &tweets_reverse_chronological[self.tweets_selected_index];
-            let tweet = &tweets[tweet_id];
-            fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
-        }
-
-        let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
-        subshell.wait()?;
-        Ok(())
-    }
+    // pub async fn log_selected_tweet(&mut self) -> Result<()> {
+    //     {
+    //         let tweets = self.tweets.lock().unwrap();
+    //         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
+    //         let tweet_id = &tweets_reverse_chronological[self.tweets_selected_index];
+    //         let tweet = &tweets[tweet_id];
+    //         fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
+    //     }
+    //
+    //     let mut subshell = process::Command::new("less").args(["/tmp/tweet"]).spawn()?;
+    //     subshell.wait()?;
+    //     Ok(())
+    // }
 
     pub fn log_message(&mut self, message: &str) -> Result<()> {
         self.set_mode(Mode::Log)?;
@@ -303,7 +289,12 @@ impl UI {
             InternalEvent::FeedUpdated => {
                 self.feed_pane.should_render = true;
                 self.render().await?;
-            }
+            },
+            InternalEvent::SelectTweet(tweet_id) => {
+                self.tweet_pane.component.set_selected_tweet_id(Some(tweet_id));
+                self.tweet_pane.should_render = true;
+                self.render().await?;
+            },
             InternalEvent::LogError(err) => {
                 self.log_message(err.to_string().as_str())?;
             }
@@ -323,7 +314,7 @@ impl UI {
                 // KeyCode::Up => self.move_selected_index(-1).await?,
                 // KeyCode::Down => self.move_selected_index(1).await?,
                 KeyCode::Char('h') => self.log_message("hello")?,
-                KeyCode::Char('i') => self.log_selected_tweet().await?,
+                // KeyCode::Char('i') => self.log_selected_tweet().await?,
                 KeyCode::Char('n') => {
                     self.do_load_page_of_tweets(false);
                 }

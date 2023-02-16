@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use crate::twitter_client::api;
-use crate::ui::{Component, Input, InternalEvent, Layout, Render};
+use crate::ui::{BoundingBox, Component, Input, InternalEvent, Layout, Render};
 use anyhow::Result;
 use crossterm::style::{self, Color};
 use crossterm::{cursor, queue};
@@ -39,15 +39,23 @@ impl FeedPane {
         let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
         let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
 
+        if self.tweets_selected_index != new_index {
+            let tweet_id = &tweets_reverse_chronological[new_index];
+            self.events.send(InternalEvent::SelectTweet(tweet_id.clone())).unwrap();
+        }
+
         self.tweets_selected_index = new_index;
         self.tweets_scroll_offset = min(self.tweets_scroll_offset, new_index);
 
+        // CR: this updates too frequently, but we don't _know_ when a bottom re-render becomes
+        // necessary we could if we kept to "last known height" as a var from render
         self.events.send(InternalEvent::FeedUpdated).unwrap();
     }
 }
 
 impl Render for FeedPane {
-    fn render(&mut self, stdout: &mut Stdout, left: u16, top: u16, width: u16, height: u16) -> Result<()> {
+    fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
+        let BoundingBox { width, height, .. } = bounding_box;
         let tweets = self.tweets.lock().unwrap();
         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
 
@@ -55,8 +63,8 @@ impl Render for FeedPane {
         let str_unknown = String::from("[unknown]");
 
         // adjust scroll_offset to new height if necessary
-        if self.tweets_selected_index - self.tweets_scroll_offset > (height as usize) {
-            self.tweets_scroll_offset = self.tweets_selected_index.saturating_sub(height as usize);
+        if self.tweets_selected_index - self.tweets_scroll_offset >= (height as usize) {
+            self.tweets_scroll_offset = self.tweets_selected_index.saturating_sub((height - 1) as usize);
         }
 
         for i in 0..height {

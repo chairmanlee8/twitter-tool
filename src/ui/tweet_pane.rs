@@ -1,5 +1,5 @@
 use crate::twitter_client::api;
-use crate::ui::{Component, Input, Layout};
+use crate::ui::{BoundingBox, Component, Input, Layout, Render};
 use anyhow::Result;
 use crossterm::style::Color;
 use crossterm::terminal::{self, ClearType};
@@ -7,56 +7,77 @@ use crossterm::{cursor, queue, style};
 use crossterm::event::KeyEvent;
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::io::Stdout;
 
-pub struct TweetPane;
+pub struct TweetPane {
+    tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
+    selected_tweet_id: Option<String>,
+}
 
 impl TweetPane {
-    pub fn render(&self, layout: &Layout, tweet: &api::Tweet) -> Result<()> {
-        let mut stdout = &layout.stdout;
-
-        let inner_width = layout.tweet_pane_width - 1;
-        let inner_left = layout.screen_cols - inner_width;
-        let re_newlines = Regex::new(r"[\r\n]+").unwrap();
-        let str_unknown = String::from("[unknown]");
-
-        let tweet_time = tweet.created_at.format("%Y-%m-%d %H:%M:%S");
-        let tweet_author_username = tweet.author_username.as_ref().unwrap_or(&str_unknown);
-        let tweet_author_name = tweet.author_name.as_ref().unwrap_or(&str_unknown);
-        let tweet_author = format!("@{tweet_author_username} [{tweet_author_name}]");
-
-        let mut row = 0;
-
-        // CR: graphemes is one thing but should split on words then greedy instead
-        // CR: some graphemes are double width, need to count correctly
-        // CR-someday: use Knuth algorithm
-        let tweet_paragraphs: Vec<&str> = re_newlines.split(&tweet.text).collect();
-        let tweet_lines: Vec<String> = tweet_paragraphs
-            .iter()
-            .map(|p| break_lines(p, inner_width as usize))
-            .flatten()
-            .collect();
-
-        queue!(stdout, cursor::MoveTo(inner_left, row))?;
-        queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
-        queue!(stdout, style::Print(&tweet_time))?;
-        row += 1;
-
-        queue!(stdout, cursor::MoveTo(inner_left, row))?;
-        queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
-        queue!(stdout, style::Print(&tweet_author))?;
-        row += 2;
-
-        for tweet_line in tweet_lines {
-            queue!(stdout, cursor::MoveTo(inner_left, row))?;
-            queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
-            queue!(stdout, style::Print(&tweet_line))?;
-            row += 1;
+    pub fn new(tweets: &Arc<Mutex<HashMap<String, api::Tweet>>>) -> Self {
+        Self {
+            tweets: tweets.clone(),
+            selected_tweet_id: None
         }
+    }
 
-        while row < layout.screen_rows {
-            queue!(stdout, cursor::MoveTo(inner_left, row))?;
+    pub fn set_selected_tweet_id(&mut self, tweet_id: Option<String>) {
+        self.selected_tweet_id = tweet_id;
+    }
+}
+
+impl Render for TweetPane {
+    fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
+        let BoundingBox { left, top, width, height } = bounding_box;
+
+        if let Some(tweet_id) = &self.selected_tweet_id {
+            let re_newlines = Regex::new(r"[\r\n]+").unwrap();
+            let str_unknown = String::from("[unknown]");
+
+            let tweets = self.tweets.lock().unwrap();
+            let tweet = &tweets[tweet_id];
+            let tweet_time = tweet.created_at.format("%Y-%m-%d %H:%M:%S");
+            let tweet_author_username = tweet.author_username.as_ref().unwrap_or(&str_unknown);
+            let tweet_author_name = tweet.author_name.as_ref().unwrap_or(&str_unknown);
+            let tweet_author = format!("@{tweet_author_username} [{tweet_author_name}]");
+
+            let mut row = top;
+
+            // CR: graphemes is one thing but should split on words then greedy instead
+            // CR: some graphemes are double width, need to count correctly
+            // CR-someday: use Knuth algorithm
+            let tweet_paragraphs: Vec<&str> = re_newlines.split(&tweet.text).collect();
+            let tweet_lines: Vec<String> = tweet_paragraphs
+                .iter()
+                .map(|p| break_lines(p, width as usize))
+                .flatten()
+                .collect();
+
+            queue!(stdout, cursor::MoveTo(left, row))?;
             queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
+            queue!(stdout, style::Print(&tweet_time))?;
             row += 1;
+
+            queue!(stdout, cursor::MoveTo(left, row))?;
+            queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
+            queue!(stdout, style::Print(&tweet_author))?;
+            row += 2;
+
+            for tweet_line in tweet_lines {
+                queue!(stdout, cursor::MoveTo(left, row))?;
+                queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
+                queue!(stdout, style::Print(&tweet_line))?;
+                row += 1;
+            }
+
+            while row < top + height {
+                queue!(stdout, cursor::MoveTo(left, row))?;
+                queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
+                row += 1;
+            }
         }
 
         Ok(())
@@ -72,6 +93,8 @@ impl Input for TweetPane {
         todo!()
     }
 }
+
+impl Component for TweetPane {}
 
 fn break_lines(text: &str, line_width: usize) -> Vec<String> {
     // CR: why does this work?
