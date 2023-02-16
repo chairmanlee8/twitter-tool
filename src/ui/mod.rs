@@ -32,15 +32,6 @@ pub enum Mode {
     Interactive,
 }
 
-// CR: deprecate
-pub struct Layout {
-    pub stdout: Stdout,
-    pub screen_cols: u16,
-    pub screen_rows: u16,
-    pub feed_pane_width: u16,
-    pub tweet_pane_width: u16,
-}
-
 #[derive(Debug)]
 pub enum InternalEvent {
     FeedUpdated,
@@ -48,11 +39,19 @@ pub enum InternalEvent {
     LogError(Error),
 }
 
+// CR: derive default?
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BoundingBox {
     pub left: u16,
     pub top: u16,
     pub width: u16,
     pub height: u16
+}
+
+impl BoundingBox {
+    pub fn new(left: u16, top: u16, width: u16, height: u16) -> Self {
+        Self { left, top, width, height }
+    }
 }
 
 pub trait Render {
@@ -70,6 +69,7 @@ pub trait Input {
 
 struct Component<T: Render + Input> {
     pub should_render: bool,
+    pub bounding_box: BoundingBox,
     pub component: T
 }
 
@@ -77,15 +77,24 @@ impl<T: Render + Input> Component<T> {
     pub fn new(component: T) -> Self {
         Self {
             should_render: true,
+            bounding_box: BoundingBox { left: 0, top: 0, width: 0, height: 0 },
             component,
         }
+    }
+
+    pub fn render_if_necessary(&mut self, stdout: &mut Stdout) -> Result<()> {
+        if self.should_render {
+            self.component.render(stdout, self.bounding_box)?;
+            self.should_render = false;
+        }
+        Ok(())
     }
 }
 
 // TODO deep dive into str vs String
 pub struct UI {
+    stdout: Stdout,
     mode: Mode,
-    layout: Layout,
     events: (UnboundedSender<InternalEvent>, UnboundedReceiver<InternalEvent>),
     feed_pane: Component<FeedPane>,
     tweet_pane: Component<TweetPane>,
@@ -110,15 +119,9 @@ impl UI {
         let tweet_pane = TweetPane::new(&tweets);
         let bottom_bar = BottomBar::new(&tweets_reverse_chronological);
 
-        Self {
+        let mut this = Self {
+            stdout: stdout(),
             mode: Mode::Log,
-            layout: Layout {
-                stdout: stdout(),
-                screen_cols: cols,
-                screen_rows: rows,
-                feed_pane_width: cols / 2,
-                tweet_pane_width: cols / 2,
-            },
             events: (tx, rx),
             feed_pane: Component::new(feed_pane),
             tweet_pane: Component::new(tweet_pane),
@@ -129,7 +132,10 @@ impl UI {
             tweets,
             tweets_reverse_chronological,
             tweets_page_token: Arc::new(AsyncMutex::new(None)),
-        }
+        };
+
+        this.resize(cols, rows);
+        this
     }
 
     fn set_mode(&mut self, mode: Mode) -> Result<()> {
@@ -137,10 +143,10 @@ impl UI {
         self.mode = mode;
 
         if prev_mode == Mode::Log && mode == Mode::Interactive {
-            execute!(stdout(), EnterAlternateScreen)?;
+            execute!(self.stdout, EnterAlternateScreen)?;
             terminal::enable_raw_mode()?;
         } else if prev_mode == Mode::Interactive && mode == Mode::Log {
-            execute!(stdout(), LeaveAlternateScreen)?;
+            execute!(self.stdout, LeaveAlternateScreen)?;
             terminal::enable_raw_mode()?;
             // CR: disabling raw mode entirely also gets rid of the keypress events...
             // disable_raw_mode()?;
@@ -150,56 +156,22 @@ impl UI {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        self.layout.screen_cols = cols;
-        self.layout.screen_rows = rows;
+        let half_width = cols / 2;
+        self.feed_pane.bounding_box = BoundingBox::new(0, 0, half_width - 1, rows - 2);
+        self.tweet_pane.bounding_box = BoundingBox::new(hald_width + 1, 0, half_width, rows - 2);
+        self.bottom_bar.bounding_box = BoundingBox::new(0, rows - 1, cols, 1);
     }
 
     pub async fn render(&mut self) -> Result<()> {
         self.set_mode(Mode::Interactive)?;
 
-        if self.feed_pane.should_render {
-            self.feed_pane.component.render(
-                &mut self.layout.stdout,
-                BoundingBox {
-                    left: 0,
-                    top: 0,
-                    width: self.layout.feed_pane_width - 1,
-                    height: self.layout.screen_rows - 2
-                }
-            )?;
-            self.feed_pane.should_render = false;
-        }
+        self.feed_pane.render_if_necessary(&mut self.stdout)?;
+        self.tweet_pane.render_if_necessary(&mut self.stdout)?;
+        self.bottom_bar.render_if_necessary(&mut self.stdout)?;
 
-        if self.tweet_pane.should_render {
-            self.tweet_pane.component.render(
-                &mut self.layout.stdout,
-                BoundingBox {
-                    left: self.layout.feed_pane_width + 1,
-                    top: 0,
-                    width: self.layout.tweet_pane_width,
-                    height: self.layout.screen_rows - 2
-                }
-            )?;
-            self.tweet_pane.should_render = false;
-        }
-
-        if self.bottom_bar.should_render {
-            self.bottom_bar.component.render(
-                &mut self.layout.stdout,
-                BoundingBox {
-                    left: 0,
-                    top: self.layout.screen_rows - 1,
-                    width: self.layout.screen_cols,
-                    height: 1
-                }
-            )?;
-            self.bottom_bar.should_render = false;
-        }
-
-        let mut stdout = &self.layout.stdout;
         let focus = self.feed_pane.component.get_cursor();
-        queue!(&self.layout.stdout, cursor::MoveTo(focus.0, focus.1))?;
-        stdout.flush()?;
+        queue!(&self.stdout, cursor::MoveTo(focus.0, focus.1))?;
+        self.stdout.flush()?;
         Ok(())
     }
 
