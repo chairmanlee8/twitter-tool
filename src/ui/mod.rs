@@ -2,29 +2,29 @@ mod bottom_bar;
 mod feed_pane;
 mod tweet_pane;
 
+use std::borrow::BorrowMut;
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::BottomBar;
 use crate::ui::feed_pane::FeedPane;
 use crate::ui::tweet_pane::TweetPane;
 use anyhow::{anyhow, Context, Error, Result};
 use crossterm::cursor;
-use crossterm::event::{Event, EventStream, KeyCode};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
 use crossterm::terminal;
 use crossterm::{
     execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures_util::{FutureExt, StreamExt};
-use std::cmp::{max, min};
+//use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{stdout, Stdout, Write};
 use std::process;
-use std::sync::Arc;
-use tokio::sync::{
-    mpsc::{self, UnboundedReceiver, UnboundedSender},
-    Mutex,
-};
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use tokio::sync::{Mutex as AsyncMutex};
+use tokio::sync::{mpsc::{self, UnboundedReceiver, UnboundedSender}};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Mode {
@@ -41,17 +41,32 @@ pub struct Layout {
 }
 
 #[derive(Debug)]
-enum InternalEvent {
-    TweetsFeedUpdated,
+pub enum InternalEvent {
+    FeedUpdated,
     LogError(Error),
 }
 
-struct ShouldRender<T> {
-    pub should_render: bool,
-    pub component: T,
+pub trait Render {
+    // NB: [render] takes [&mut self] since there isn't a separate notification to component that
+    // their bbox changed
+    fn render(&mut self, stdout: &mut Stdout, left: u16, top: u16, width: u16, height: u16) -> Result<()>;
 }
 
-impl<T> ShouldRender<T> {
+pub trait Input {
+    fn handle_key_event(&mut self, event: KeyEvent);
+    fn get_cursor(&self) -> (u16, u16);
+}
+
+// CR-someday: pub trait Animate
+
+pub trait Component: Render + Input {}
+
+struct ShouldRender<T: Component> {
+    pub should_render: bool,
+    pub component: T
+}
+
+impl<T: Component> ShouldRender<T> {
     pub fn new(component: T) -> Self {
         ShouldRender {
             should_render: true,
@@ -60,33 +75,38 @@ impl<T> ShouldRender<T> {
     }
 }
 
-// CR-someday: pub trait Animate
-// CR-someday: pub trait Focus
-
 // TODO deep dive into str vs String
 pub struct UI {
     mode: Mode,
     layout: Layout,
-    events: (
-        UnboundedSender<InternalEvent>,
-        UnboundedReceiver<InternalEvent>,
-    ),
+    events: (UnboundedSender<InternalEvent>, UnboundedReceiver<InternalEvent>),
+    feed_pane: ShouldRender<FeedPane>,
+    focus_index: usize,
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
     tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
-    tweets_page_token: Arc<Mutex<Option<String>>>,
+    tweets_page_token: Arc<AsyncMutex<Option<String>>>,
     tweets_view_offset: usize,
     tweets_selected_index: usize,
-    feed_pane: ShouldRender<FeedPane>,
-    tweet_pane: ShouldRender<TweetPane>,
-    bottom_bar: ShouldRender<BottomBar>,
+    // CR-someday: maybe use Weak<dyn Input> here, but it runs into a gnarly type error
+    // focus: Rc<dyn Input>,
+    // feed_pane: ShouldRender<Rc<FeedPane>>,
+    // tweet_pane: ShouldRender<Rc<TweetPane>>,
+    // bottom_bar: ShouldRender<Rc<BottomBar>>,
 }
 
 impl UI {
     pub fn new(twitter_client: TwitterClient, twitter_user: api::User) -> Self {
         let (cols, rows) = terminal::size().unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
+
+        let tweets = Arc::new(Mutex::new(HashMap::new()));
+        let tweets_reverse_chronological = Arc::new(Mutex::new(Vec::new()));
+
+        let feed_pane = FeedPane::new(&tx, &tweets, &tweets_reverse_chronological);
+        let tweet_pane = TweetPane;
+        let bottom_bar = BottomBar;
 
         Self {
             mode: Mode::Log,
@@ -98,16 +118,15 @@ impl UI {
                 tweet_pane_width: cols / 2,
             },
             events: (tx, rx),
+            feed_pane: ShouldRender::new(feed_pane),
+            focus_index: 0,
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
-            tweets: Arc::new(Mutex::new(HashMap::new())),
-            tweets_reverse_chronological: Arc::new(Mutex::new(Vec::new())),
-            tweets_page_token: Arc::new(Mutex::new(None)),
+            tweets,
+            tweets_reverse_chronological,
+            tweets_page_token: Arc::new(AsyncMutex::new(None)),
             tweets_view_offset: 0,
             tweets_selected_index: 0,
-            feed_pane: ShouldRender::new(FeedPane),
-            tweet_pane: ShouldRender::new(TweetPane),
-            bottom_bar: ShouldRender::new(BottomBar),
         }
     }
 
@@ -133,84 +152,82 @@ impl UI {
         self.layout.screen_rows = rows;
     }
 
-    pub async fn move_selected_index(&mut self, delta: isize) -> Result<()> {
-        {
-            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
-
-            let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
-            let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
-            let view_top = self.tweets_view_offset;
-            let view_height = (self.layout.screen_rows - 3) as usize;
-            let view_bottom = self.tweets_view_offset + view_height;
-
-            self.tweets_selected_index = new_index;
-
-            if new_index < view_top {
-                self.tweets_view_offset = new_index;
-                self.feed_pane.should_render = true;
-            } else if new_index > view_bottom {
-                self.tweets_view_offset = max(0, new_index - view_height);
-                self.feed_pane.should_render = true;
-            }
-
-            self.tweet_pane.should_render = true;
-            self.bottom_bar.should_render = true;
-        }
-
-        self.render().await
-    }
+    // pub async fn move_selected_index(&mut self, delta: isize) -> Result<()> {
+    //     {
+    //         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+    //
+    //         let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
+    //         let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
+    //         let view_top = self.tweets_view_offset;
+    //         let view_height = (self.layout.screen_rows - 3) as usize;
+    //         let view_bottom = self.tweets_view_offset + view_height;
+    //
+    //         self.tweets_selected_index = new_index;
+    //
+    //         if new_index < view_top {
+    //             self.tweets_view_offset = new_index;
+    //             self.feed_pane.should_render = true;
+    //         } else if new_index > view_bottom {
+    //             self.tweets_view_offset = max(0, new_index - view_height);
+    //             self.feed_pane.should_render = true;
+    //         }
+    //
+    //         self.tweet_pane.should_render = true;
+    //         self.bottom_bar.should_render = true;
+    //     }
+    //
+    //     self.render().await
+    // }
 
     pub async fn render(&mut self) -> Result<()> {
         self.set_mode(Mode::Interactive)?;
 
+        if self.feed_pane.should_render {
+            self.feed_pane.component.render(
+                &mut self.layout.stdout,
+                0, 0, self.layout.screen_cols, self.layout.screen_rows
+            )?;
+            self.feed_pane.should_render = false;
+        }
+
         {
-            let tweets = self.tweets.lock().await;
-            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
-
-            if self.feed_pane.should_render {
-                self.feed_pane.component.render(
-                    &self.layout,
-                    &tweets,
-                    &tweets_reverse_chronological,
-                    self.tweets_view_offset,
-                )?;
-                self.feed_pane.should_render = false;
-            }
-
-            if self.tweet_pane.should_render {
-                self.tweet_pane.component.render(
-                    &self.layout,
-                    &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
-                )?;
-                self.tweet_pane.should_render = false;
-            }
-
-            if self.bottom_bar.should_render {
-                self.bottom_bar.component.render(
-                    &self.layout,
-                    &tweets_reverse_chronological,
-                    self.tweets_selected_index,
-                )?;
-                self.bottom_bar.should_render = false;
-            }
+            // let tweets = self.tweets.lock().await;
+            // let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+            //
+            // if self.tweet_pane.should_render {
+            //     self.tweet_pane.component.render(
+            //         &self.layout,
+            //         &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
+            //     )?;
+            //     self.tweet_pane.should_render = false;
+            // }
+            //
+            // if self.bottom_bar.should_render {
+            //     self.bottom_bar.component.render(
+            //         &self.layout,
+            //         &tweets_reverse_chronological,
+            //         self.tweets_selected_index,
+            //     )?;
+            //     self.bottom_bar.should_render = false;
+            // }
         }
 
         let mut stdout = &self.layout.stdout;
-        queue!(
-            &self.layout.stdout,
-            cursor::MoveTo(
-                16,
-                (self.tweets_selected_index - self.tweets_view_offset) as u16
-            )
-        )?;
+        let focus = self.feed_pane.component.get_cursor();
+        queue!(&self.layout.stdout, cursor::MoveTo(focus.0, focus.1))?;
+        //     cursor::MoveTo(
+        //         16,
+        //         (self.tweets_selected_index - self.tweets_view_offset) as u16
+        //     )
+        // )?;
         stdout.flush()?;
         Ok(())
     }
 
     pub async fn log_selected_tweet(&mut self) -> Result<()> {
         {
-            let tweets = self.tweets.lock().await;
-            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+            let tweets = self.tweets.lock().unwrap();
+            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
             let tweet_id = &tweets_reverse_chronological[self.tweets_selected_index];
             let tweet = &tweets[tweet_id];
             fs::write("/tmp/tweet", format!("{:#?}", tweet))?;
@@ -260,7 +277,7 @@ impl UI {
                 *tweets_page_token = page_token;
 
                 {
-                    let mut tweets = tweets.lock().await;
+                    let mut tweets = tweets.lock().unwrap();
                     for tweet in new_tweets {
                         new_tweets_reverse_chronological.push(tweet.id.clone());
                         tweets.insert(tweet.id.clone(), tweet);
@@ -268,14 +285,14 @@ impl UI {
                 }
                 {
                     let mut tweets_reverse_chronological =
-                        tweets_reverse_chronological.lock().await;
+                        tweets_reverse_chronological.lock().unwrap();
                     tweets_reverse_chronological.append(&mut new_tweets_reverse_chronological);
                 }
                 Ok(())
             }
             .await
             {
-                Ok(()) => event_sender.send(InternalEvent::TweetsFeedUpdated),
+                Ok(()) => event_sender.send(InternalEvent::FeedUpdated),
                 Err(error) => event_sender.send(InternalEvent::LogError(error)),
             }
         });
@@ -283,8 +300,8 @@ impl UI {
 
     async fn handle_internal_event(&mut self, event: InternalEvent) -> Result<()> {
         match event {
-            InternalEvent::TweetsFeedUpdated => {
-                self.tweet_pane.should_render = true;
+            InternalEvent::FeedUpdated => {
+                self.feed_pane.should_render = true;
                 self.render().await?;
             }
             InternalEvent::LogError(err) => {
@@ -299,12 +316,12 @@ impl UI {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Esc => {
                     self.feed_pane.should_render = true;
-                    self.tweet_pane.should_render = true;
-                    self.bottom_bar.should_render = true;
+                    // self.tweet_pane.should_render = true;
+                    // self.bottom_bar.should_render = true;
                     self.render().await?
                 }
-                KeyCode::Up => self.move_selected_index(-1).await?,
-                KeyCode::Down => self.move_selected_index(1).await?,
+                // KeyCode::Up => self.move_selected_index(-1).await?,
+                // KeyCode::Down => self.move_selected_index(1).await?,
                 KeyCode::Char('h') => self.log_message("hello")?,
                 KeyCode::Char('i') => self.log_selected_tweet().await?,
                 KeyCode::Char('n') => {
@@ -314,7 +331,9 @@ impl UI {
                     reset();
                     process::exit(0);
                 }
-                _ => (),
+                _ => {
+                    self.feed_pane.component.handle_key_event(key_event);
+                },
             },
             Event::Resize(cols, rows) => self.resize(cols, rows),
             _ => (),

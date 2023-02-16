@@ -1,9 +1,10 @@
 use crate::twitter_client::api;
-use crate::ui::Layout;
+use crate::ui::{Input, Layout};
 use anyhow::Result;
 use crossterm::style::Color;
 use crossterm::{cursor, queue, style};
 use std::io::{stdout, Write};
+use crossterm::event::KeyEvent;
 
 pub struct BottomBar;
 
@@ -27,5 +28,15 @@ impl BottomBar {
 
         stdout.flush()?;
         Ok(())
+    }
+}
+
+impl Input for BottomBar {
+    fn handle_key_event(&mut self, event: KeyEvent) {
+        todo!()
+    }
+
+    fn get_cursor(&self) -> (u16, u16) {
+        todo!()
     }
 }

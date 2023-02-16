@@ -1,9 +1,10 @@
 use crate::twitter_client::api;
-use crate::ui::Layout;
+use crate::ui::{Component, Input, Layout};
 use anyhow::Result;
 use crossterm::style::Color;
 use crossterm::terminal::{self, ClearType};
 use crossterm::{cursor, queue, style};
+use crossterm::event::KeyEvent;
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -59,6 +60,16 @@ impl TweetPane {
         }
 
         Ok(())
+    }
+}
+
+impl Input for TweetPane {
+    fn handle_key_event(&mut self, event: KeyEvent) {
+        todo!()
+    }
+
+    fn get_cursor(&self) -> (u16, u16) {
+        todo!()
     }
 }
 
