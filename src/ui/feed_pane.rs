@@ -115,8 +115,9 @@ impl Input for FeedPane {
         }
     }
 
-    fn get_cursor(&self) -> (u16, u16) {
-        return (16, (self.tweets_selected_index - self.tweets_scroll_offset) as u16)
+    fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16) {
+        let BoundingBox { left, top, .. } = bounding_box;
+        return (left + 16, top + (self.tweets_selected_index - self.tweets_scroll_offset) as u16)
     }
 }
 

@@ -89,8 +89,8 @@ impl Input for TweetPane {
         todo!()
     }
 
-    fn get_cursor(&self) -> (u16, u16) {
-        todo!()
+    fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16) {
+        (bounding_box.left, bounding_box.top)
     }
 }
 

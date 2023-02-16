@@ -43,7 +43,7 @@ impl Input for BottomBar {
         todo!()
     }
 
-    fn get_cursor(&self) -> (u16, u16) {
+    fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16) {
         todo!()
     }
 }

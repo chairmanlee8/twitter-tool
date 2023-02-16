@@ -62,7 +62,7 @@ pub trait Render {
 
 pub trait Input {
     fn handle_key_event(&mut self, event: KeyEvent);
-    fn get_cursor(&self) -> (u16, u16);
+    fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16);
 }
 
 // CR-someday: pub trait Animate (or maybe combine with Render)
@@ -89,6 +89,34 @@ impl<T: Render + Input> Component<T> {
         }
         Ok(())
     }
+
+    pub fn get_cursor(&self) -> (u16, u16) {
+        self.component.get_cursor(self.bounding_box)
+    }
+}
+
+// TODO: enum methods?
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum Focus {
+    FeedPane,
+    TweetPane
+}
+
+impl Focus {
+    pub fn next(&self) -> Self {
+        match self {
+            Self::FeedPane => Self::TweetPane,
+            Self::TweetPane => Self::FeedPane
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            Self::FeedPane => Self::TweetPane,
+            Self::TweetPane => Self::FeedPane
+        }
+    }
 }
 
 // TODO deep dive into str vs String
@@ -99,7 +127,7 @@ pub struct UI {
     feed_pane: Component<FeedPane>,
     tweet_pane: Component<TweetPane>,
     bottom_bar: Component<BottomBar>,
-    focus_index: usize,
+    focus: Focus,
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
@@ -126,7 +154,7 @@ impl UI {
             feed_pane: Component::new(feed_pane),
             tweet_pane: Component::new(tweet_pane),
             bottom_bar: Component::new(bottom_bar),
-            focus_index: 0,
+            focus: Focus::FeedPane,
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
             tweets,
@@ -169,7 +197,10 @@ impl UI {
         self.tweet_pane.render_if_necessary(&mut self.stdout)?;
         self.bottom_bar.render_if_necessary(&mut self.stdout)?;
 
-        let focus = self.feed_pane.component.get_cursor();
+        let focus = match self.focus {
+            Focus::FeedPane => self.feed_pane.get_cursor(),
+            Focus::TweetPane => self.tweet_pane.get_cursor()
+        };
         queue!(&self.stdout, cursor::MoveTo(focus.0, focus.1))?;
         self.stdout.flush()?;
         Ok(())
@@ -276,7 +307,11 @@ impl UI {
                     self.tweet_pane.should_render = true;
                     self.bottom_bar.should_render = true;
                     self.render().await?
-                }
+                },
+                KeyCode::Tab => {
+                    self.focus = self.focus.next();
+                    self.render().await?
+                },
                 // KeyCode::Up => self.move_selected_index(-1).await?,
                 // KeyCode::Down => self.move_selected_index(1).await?,
                 KeyCode::Char('h') => self.log_message("hello")?,
