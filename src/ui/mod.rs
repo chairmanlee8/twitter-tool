@@ -211,7 +211,7 @@ impl UI {
 
     pub fn log_message(&mut self, message: &str) -> Result<()> {
         self.set_mode(Mode::Log)?;
-        println!("{message}");
+        println!("{message}\r");
         Ok(())
     }
 
