@@ -1635,6 +1635,7 @@ name = "twitter-tool-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitflags",
  "chrono",
  "clap",
  "crossterm",

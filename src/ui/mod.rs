@@ -7,9 +7,10 @@ use crate::ui::bottom_bar::render_bottom_bar;
 use crate::ui::feed_pane::render_feed_pane;
 use crate::ui::tweet_pane::render_tweet_pane;
 use anyhow::{anyhow, Context, Error, Result};
+use bitflags::bitflags;
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
+use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::{
     execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
@@ -46,6 +47,14 @@ enum InternalEvent {
     LogError(Error),
 }
 
+bitflags! {
+    struct Dirty: u8 {
+        const FEED_PANE = 1 << 0;
+        const TWEET_PANE = 1 << 1;
+        const BOTTOM_BAR = 1 << 2;
+    }
+}
+
 // TODO deep dive into str vs String
 pub struct UI {
     mode: Mode,
@@ -54,6 +63,7 @@ pub struct UI {
         UnboundedSender<InternalEvent>,
         UnboundedReceiver<InternalEvent>,
     ),
+    dirty: Dirty,
     twitter_client: Arc<TwitterClient>,
     twitter_user: Arc<api::User>,
     tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
@@ -65,7 +75,7 @@ pub struct UI {
 
 impl UI {
     pub fn new(twitter_client: TwitterClient, twitter_user: api::User) -> Self {
-        let (cols, rows) = size().unwrap();
+        let (cols, rows) = terminal::size().unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
 
         Self {
@@ -78,6 +88,7 @@ impl UI {
                 tweet_pane_width: cols / 2,
             },
             events: (tx, rx),
+            dirty: Dirty::all(),
             twitter_client: Arc::new(twitter_client),
             twitter_user: Arc::new(twitter_user),
             tweets: Arc::new(Mutex::new(HashMap::new())),
@@ -94,10 +105,10 @@ impl UI {
 
         if prev_mode == Mode::Log && mode == Mode::Interactive {
             execute!(stdout(), EnterAlternateScreen)?;
-            enable_raw_mode()?;
+            terminal::enable_raw_mode()?;
         } else if prev_mode == Mode::Interactive && mode == Mode::Log {
             execute!(stdout(), LeaveAlternateScreen)?;
-            enable_raw_mode()?;
+            terminal::enable_raw_mode()?;
             // CR: disabling raw mode entirely also gets rid of the keypress events...
             // disable_raw_mode()?;
         }
@@ -111,35 +122,57 @@ impl UI {
     }
 
     pub async fn move_selected_index(&mut self, delta: isize) -> Result<()> {
-        let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+        {
+            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
 
-        let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
-        let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
-        let view_top = self.tweets_view_offset;
-        let view_height = (self.layout.screen_rows - 3) as usize;
-        let view_bottom = self.tweets_view_offset + view_height;
+            let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
+            let new_index = min(new_index, tweets_reverse_chronological.len() - 1);
+            let view_top = self.tweets_view_offset;
+            let view_height = (self.layout.screen_rows - 3) as usize;
+            let view_bottom = self.tweets_view_offset + view_height;
 
-        self.tweets_selected_index = new_index;
+            self.tweets_selected_index = new_index;
 
-        drop(tweets_reverse_chronological);
+            if new_index < view_top {
+                self.tweets_view_offset = new_index;
+                self.dirty = Dirty::all();
+            } else if new_index > view_bottom {
+                self.tweets_view_offset = max(0, new_index - view_height);
+                self.dirty = Dirty::all();
+            } else {
+                self.dirty.insert(Dirty::BOTTOM_BAR | Dirty::TWEET_PANE);
+            }
+        }
 
-        if new_index < view_top {
-            self.tweets_view_offset = new_index;
-            self.show_tweets().await
-        } else if new_index > view_bottom {
-            self.tweets_view_offset = max(0, new_index - view_height);
-            self.show_tweets().await
-        } else {
-            // CR: this is confusing re the above two conditions, consider a refactor
-            {
-                let tweets = self.tweets.lock().await;
-                let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+        self.render().await
+    }
 
+    pub async fn render(&mut self) -> Result<()> {
+        self.set_mode(Mode::Interactive)?;
+
+        {
+            let tweets = self.tweets.lock().await;
+            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
+
+            // TODO: we might have enough to make Component trait now, that way we can keep
+            // dirty/focus return per widget
+            if self.dirty.contains(Dirty::FEED_PANE) {
+                render_feed_pane(
+                    &self.layout,
+                    &tweets,
+                    &tweets_reverse_chronological,
+                    self.tweets_view_offset,
+                )?;
+            }
+
+            if self.dirty.contains(Dirty::TWEET_PANE) {
                 render_tweet_pane(
                     &self.layout,
                     &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
                 )?;
+            }
 
+            if self.dirty.contains(Dirty::BOTTOM_BAR) {
                 render_bottom_bar(
                     &self.layout,
                     &tweets_reverse_chronological,
@@ -147,57 +180,17 @@ impl UI {
                 )?;
             }
 
-            execute!(
-                stdout(),
-                cursor::MoveTo(
-                    16,
-                    (self.tweets_selected_index - self.tweets_view_offset) as u16
-                )
-            )?;
-
-            Ok(())
+            self.dirty = Dirty::empty();
         }
-    }
-
-    // CR: switch to render_tweets (show_tweets then just sets state)
-    pub async fn show_tweets(&mut self) -> Result<()> {
-        self.set_mode(Mode::Interactive)?;
 
         let mut stdout = &self.layout.stdout;
-
-        queue!(stdout, Clear(ClearType::All))?;
-
-        {
-            let tweets = self.tweets.lock().await;
-            let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().await;
-
-            render_feed_pane(
-                &self.layout,
-                &tweets,
-                &tweets_reverse_chronological,
-                self.tweets_view_offset,
-            )?;
-
-            render_tweet_pane(
-                &self.layout,
-                &tweets[&tweets_reverse_chronological[self.tweets_selected_index]],
-            )?;
-
-            render_bottom_bar(
-                &self.layout,
-                &tweets_reverse_chronological,
-                self.tweets_selected_index,
-            )?;
-        }
-
         queue!(
-            stdout,
+            &self.layout.stdout,
             cursor::MoveTo(
                 16,
                 (self.tweets_selected_index - self.tweets_view_offset) as u16
             )
         )?;
-
         stdout.flush()?;
         Ok(())
     }
@@ -289,7 +282,10 @@ impl UI {
                         Some(Ok(event)) => {
                             match event {
                                 Event::Key(key_event) => match key_event.code {
-                                    KeyCode::Esc => self.show_tweets().await?,
+                                    KeyCode::Esc => {
+                                        self.dirty = Dirty::all();
+                                        self.render().await?
+                                    },
                                     KeyCode::Up => self.move_selected_index(-1).await?,
                                     KeyCode::Down => self.move_selected_index(1).await?,
                                     KeyCode::Char('h') => self.log_message("hello")?,
@@ -313,7 +309,8 @@ impl UI {
                 ievent = internal_event => {
                     match ievent {
                         Some(InternalEvent::TweetsFeedUpdated) => {
-                            self.show_tweets().await?;
+                            self.dirty.insert(Dirty::TWEET_PANE);
+                            self.render().await?;
                         },
                         Some(InternalEvent::LogError(err)) => {
                             self.log_message(err.to_string().as_str())?;
@@ -328,5 +325,5 @@ impl UI {
 
 pub fn reset() {
     execute!(stdout(), LeaveAlternateScreen).unwrap();
-    disable_raw_mode().unwrap()
+    terminal::disable_raw_mode().unwrap()
 }
