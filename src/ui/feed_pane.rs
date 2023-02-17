@@ -74,7 +74,7 @@ impl Render for FeedPane {
             width,
             height,
         } = bounding_box;
-        
+
         let tweets = self.tweets.lock().unwrap();
         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
 
