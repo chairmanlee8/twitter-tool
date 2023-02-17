@@ -109,13 +109,19 @@ fn break_lines(text: &str, line_width: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_segmentation() {
-        let str = "Hello world!";
-        let lines = break_lines(&str, 4);
-        let expected = vec!["Hell", "o wo", "rld!"];
-        assert_eq!(lines, expected);
+        let str = "Why did the chicken cross the road? Because he wanted to get to the other side.";
+        let result = textwrap::wrap(str, 20);
+        assert_eq!(
+            result,
+            vec![
+                "Why did the chicken",
+                "cross the road?",
+                "Because he wanted",
+                "to get to the other",
+                "side."
+            ]
+        );
     }
 }
