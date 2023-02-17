@@ -267,12 +267,16 @@ impl UI {
             }
             .await
             {
-                Ok(()) => event_sender.send(InternalEvent::FeedPaneInvalidated).unwrap(),
+                Ok(()) => event_sender
+                    .send(InternalEvent::FeedPaneInvalidated)
+                    .unwrap(),
                 Err(error) => event_sender.send(InternalEvent::LogError(error)).unwrap(),
             }
         }));
 
-        self.bottom_bar.component.set_num_tasks_in_flight(self.tasks.len());
+        self.bottom_bar
+            .component
+            .set_num_tasks_in_flight(self.tasks.len());
         self.bottom_bar.should_render = true;
         self.events.0.send(InternalEvent::Refresh).unwrap();
     }

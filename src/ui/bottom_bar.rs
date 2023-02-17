@@ -9,14 +9,14 @@ use std::sync::{Arc, Mutex};
 
 pub struct BottomBar {
     tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
-    num_tasks_in_flight: usize
+    num_tasks_in_flight: usize,
 }
 
 impl BottomBar {
     pub fn new(tweets_reverse_chronological: &Arc<Mutex<Vec<String>>>) -> Self {
         Self {
             tweets_reverse_chronological: tweets_reverse_chronological.clone(),
-            num_tasks_in_flight: 0
+            num_tasks_in_flight: 0,
         }
     }
 
@@ -35,7 +35,10 @@ impl Render for BottomBar {
         queue!(stdout, style::SetBackgroundColor(Color::White))?;
 
         if self.num_tasks_in_flight > 0 {
-            queue!(stdout, style::Print(format!("[* {}] ", self.num_tasks_in_flight)))?;
+            queue!(
+                stdout,
+                style::Print(format!("[* {}] ", self.num_tasks_in_flight))
+            )?;
         }
         queue!(stdout, style::Print(format!("{feed_length} tweets")))?;
         queue!(stdout, style::ResetColor)?;

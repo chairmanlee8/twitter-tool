@@ -41,7 +41,10 @@ impl FeedPane {
     fn move_selected_index(&mut self, delta: isize) {
         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
         let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
-        let new_index = min(new_index, tweets_reverse_chronological.len().saturating_sub(1));
+        let new_index = min(
+            new_index,
+            tweets_reverse_chronological.len().saturating_sub(1),
+        );
 
         if self.tweets_selected_index != new_index {
             self.tweets_selected_index = new_index;
@@ -53,9 +56,13 @@ impl FeedPane {
 
         if new_index < self.tweets_scroll_offset {
             self.tweets_scroll_offset = new_index;
-            self.events.send(InternalEvent::FeedPaneInvalidated).unwrap();
+            self.events
+                .send(InternalEvent::FeedPaneInvalidated)
+                .unwrap();
         } else if new_index >= self.tweets_scroll_offset + (self.last_known_height as usize) {
-            self.events.send(InternalEvent::FeedPaneInvalidated).unwrap();
+            self.events
+                .send(InternalEvent::FeedPaneInvalidated)
+                .unwrap();
         }
     }
 }
