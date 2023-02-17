@@ -19,6 +19,7 @@
 - for displaying tweets, prefix char (highlight for select, _^=reply, RT=retweet, QT=quote tweet)
 - space to expand reply, RT, QT inline
 - consider storing tweet ids as u64
+- remove "as usize" casts these are unsafe?
 
 # Some Thoughts
 

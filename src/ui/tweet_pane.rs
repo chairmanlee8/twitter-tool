@@ -91,7 +91,8 @@ mod tests {
     #[test]
     fn test_segmentation() {
         // NB: expectation is correct; reasoning may be subtle
-        let str = "Why did the chicken cross the road?\n\nBecause he wanted to get to the other side.";
+        let str =
+            "Why did the chicken cross the road?\n\nBecause he wanted to get to the other side.";
         let result = textwrap::wrap(str, 20);
         assert_eq!(
             result,

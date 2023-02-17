@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::io::Stdout;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::UnboundedSender;
-use unicode_truncate::UnicodeTruncateStr;
 
 pub struct FeedPane {
     events: UnboundedSender<InternalEvent>,
@@ -69,12 +68,19 @@ impl FeedPane {
 
 impl Render for FeedPane {
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
-        let BoundingBox { width, height, .. } = bounding_box;
+        let BoundingBox {
+            left,
+            top,
+            width,
+            height,
+        } = bounding_box;
+        
         let tweets = self.tweets.lock().unwrap();
         let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
 
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
+        let str_clear = " ".repeat(width as usize);
 
         self.last_known_height = height;
 
@@ -94,30 +100,39 @@ impl Render for FeedPane {
 
             let tweet_id = &tweets_reverse_chronological[tweet_idx];
             let tweet = &tweets.get(tweet_id).unwrap();
-            let mut col_offset: u16 = 0;
+            let mut col_offset: u16 = left;
+
+            // Clear the line
+            queue!(stdout, cursor::MoveTo(col_offset, top + i))?;
+            queue!(stdout, style::Print(&str_clear))?;
 
             let tweet_time = tweet.created_at.format("%m-%d %H:%M:%S");
-            let tweet_time = format!("{tweet_time}  > ");
-            queue!(stdout, cursor::MoveTo(col_offset, i))?;
+            let tweet_time = format!("{tweet_time}  >  ");
+            queue!(stdout, cursor::MoveTo(col_offset, top + i))?;
             queue!(stdout, style::SetForegroundColor(Color::DarkGrey))?;
             queue!(stdout, style::Print(&tweet_time))?;
             queue!(stdout, style::ResetColor)?;
-            col_offset += (tweet_time.len() + 1) as u16;
+            col_offset += tweet_time.len() as u16;
 
-            // CR: possible to cast from String to &str?
             let tweet_author = tweet.author_username.as_ref().unwrap_or(&str_unknown);
-            let tweet_author = format!("@{tweet_author}");
-            queue!(stdout, cursor::MoveTo(col_offset, i))?;
+            let tweet_author = format!("@{tweet_author} ");
             queue!(stdout, style::SetForegroundColor(Color::DarkCyan))?;
             queue!(stdout, style::Print(&tweet_author))?;
             queue!(stdout, style::ResetColor)?;
-            col_offset += (&tweet_author.len() + 1) as u16;
+            col_offset += tweet_author.len() as u16;
 
             let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
-            let (truncated, _) =
-                formatted.unicode_truncate((width.saturating_sub(col_offset)) as usize);
-            queue!(stdout, cursor::MoveTo(col_offset, i))?;
-            queue!(stdout, style::Print(truncated))?;
+            let remaining_length = width.saturating_sub(col_offset) as usize;
+            let lines = textwrap::wrap(&formatted, remaining_length);
+            if lines.len() == 1 {
+                queue!(stdout, style::Print(&lines[0]))?;
+            } else if lines.len() > 1 {
+                // Rewrap lines to accommodate ellipsis (…), which may knock out a word
+                let remaining_length = width.saturating_sub(col_offset + 1) as usize;
+                let lines = textwrap::wrap(&formatted, remaining_length);
+                queue!(stdout, style::Print(&lines[0]))?;
+                queue!(stdout, style::Print("…"))?;
+            }
         }
 
         Ok(())
