@@ -14,6 +14,7 @@ use crossterm::{
     execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
+use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
 use std::collections::HashMap;
 use std::fs;
@@ -31,7 +32,8 @@ pub enum Mode {
 
 #[derive(Debug)]
 pub enum InternalEvent {
-    FeedRepaint,
+    Refresh,
+    FeedPaneInvalidated,
     SelectTweet(String),
     LogTweet(String),
     LogError(Error),
@@ -97,7 +99,6 @@ impl<T: Render + Input> Component<T> {
     }
 }
 
-// TODO: enum methods?
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 enum Focus {
@@ -121,7 +122,6 @@ impl Focus {
     }
 }
 
-// TODO deep dive into str vs String
 pub struct UI {
     stdout: Stdout,
     mode: Mode,
@@ -129,6 +129,7 @@ pub struct UI {
         UnboundedSender<InternalEvent>,
         UnboundedReceiver<InternalEvent>,
     ),
+    tasks: FuturesUnordered<tokio::task::JoinHandle<()>>,
     feed_pane: Component<FeedPane>,
     tweet_pane: Component<TweetPane>,
     bottom_bar: Component<BottomBar>,
@@ -156,6 +157,7 @@ impl UI {
             stdout: stdout(),
             mode: Mode::Log,
             events: (tx, rx),
+            tasks: FuturesUnordered::new(),
             feed_pane: Component::new(feed_pane),
             tweet_pane: Component::new(tweet_pane),
             bottom_bar: Component::new(bottom_bar),
@@ -228,7 +230,7 @@ impl UI {
         let tweets = self.tweets.clone();
         let tweets_reverse_chronological = self.tweets_reverse_chronological.clone();
 
-        tokio::spawn(async move {
+        self.tasks.push(tokio::spawn(async move {
             match async {
                 let mut tweets_page_token = tweets_page_token
                     .try_lock()
@@ -265,15 +267,20 @@ impl UI {
             }
             .await
             {
-                Ok(()) => event_sender.send(InternalEvent::FeedRepaint),
-                Err(error) => event_sender.send(InternalEvent::LogError(error)),
+                Ok(()) => event_sender.send(InternalEvent::FeedPaneInvalidated).unwrap(),
+                Err(error) => event_sender.send(InternalEvent::LogError(error)).unwrap(),
             }
-        });
+        }));
+
+        self.bottom_bar.component.set_num_tasks_in_flight(self.tasks.len());
+        self.bottom_bar.should_render = true;
+        self.events.0.send(InternalEvent::Refresh).unwrap();
     }
 
     async fn handle_internal_event(&mut self, event: InternalEvent) -> Result<()> {
         match event {
-            InternalEvent::FeedRepaint => {
+            InternalEvent::Refresh => self.render().await?,
+            InternalEvent::FeedPaneInvalidated => {
                 self.feed_pane.should_render = true;
                 self.bottom_bar.should_render = true;
                 self.render().await?;
@@ -340,6 +347,8 @@ impl UI {
         loop {
             let terminal_event = terminal_event_stream.next().fuse();
             let internal_event = self.events.1.recv();
+            let there_are_tasks = !self.tasks.is_empty();
+            let task_event = self.tasks.next().fuse();
 
             tokio::select! {
                 event = terminal_event => {
@@ -351,6 +360,13 @@ impl UI {
                     if let Some(event) = event {
                         self.handle_internal_event(event).await?;
                     }
+                },
+                // NB: removing the precondition will cause the UI to eventually break, even if the
+                // match arm handler is empty, why?
+                _ = task_event, if there_are_tasks => {
+                    self.bottom_bar.component.set_num_tasks_in_flight(self.tasks.len());
+                    self.bottom_bar.should_render = true;
+                    self.render().await?;
                 }
             }
         }

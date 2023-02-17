@@ -2,19 +2,26 @@ use crate::ui::{BoundingBox, Input, Render};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use crossterm::style::Color;
+use crossterm::terminal::{self, ClearType};
 use crossterm::{cursor, queue, style};
 use std::io::{Stdout, Write};
 use std::sync::{Arc, Mutex};
 
 pub struct BottomBar {
     tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
+    num_tasks_in_flight: usize
 }
 
 impl BottomBar {
     pub fn new(tweets_reverse_chronological: &Arc<Mutex<Vec<String>>>) -> Self {
         Self {
             tweets_reverse_chronological: tweets_reverse_chronological.clone(),
+            num_tasks_in_flight: 0
         }
+    }
+
+    pub fn set_num_tasks_in_flight(&mut self, num_tasks_in_flight: usize) {
+        self.num_tasks_in_flight = num_tasks_in_flight;
     }
 }
 
@@ -26,8 +33,13 @@ impl Render for BottomBar {
         queue!(stdout, cursor::MoveTo(bounding_box.left, bounding_box.top))?;
         queue!(stdout, style::SetForegroundColor(Color::Black))?;
         queue!(stdout, style::SetBackgroundColor(Color::White))?;
+
+        if self.num_tasks_in_flight > 0 {
+            queue!(stdout, style::Print(format!("[* {}] ", self.num_tasks_in_flight)))?;
+        }
         queue!(stdout, style::Print(format!("{feed_length} tweets")))?;
         queue!(stdout, style::ResetColor)?;
+        queue!(stdout, terminal::Clear(ClearType::UntilNewLine))?;
 
         stdout.flush()?;
         Ok(())
