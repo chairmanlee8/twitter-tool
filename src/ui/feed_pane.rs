@@ -4,15 +4,12 @@ use crate::ui_framework::scroll_buffer::{ScrollBuffer, TextSegment};
 use crate::ui_framework::{bounding_box::BoundingBox, Input, Render};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
-use crossterm::style::{self, Color, Colors};
-use crossterm::{cursor, queue};
+use crossterm::style::{Color, Colors};
 use regex::Regex;
-use std::cmp::{max, min};
 use std::io::Stdout;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use textwrap::core::display_width;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub struct FeedPane {
@@ -100,6 +97,14 @@ impl FeedPane {
 
         self.events.send(InternalEvent::RegisterTask(task)).unwrap();
     }
+
+    pub fn log_selected_tweet(&self) {
+        let feed = self.store.tweets_reverse_chronological.lock().unwrap();
+        let selected_id = &feed[self.tweets_selected_index];
+        self.events
+            .send(InternalEvent::LogTweet(selected_id.clone()))
+            .unwrap();
+    }
 }
 
 impl Render for FeedPane {
@@ -137,14 +142,7 @@ impl Input for FeedPane {
 
     fn handle_key_event(&mut self, event: &KeyEvent) {
         match event.code {
-            KeyCode::Char('i') => {
-                // CR: factor
-                let feed = self.store.tweets_reverse_chronological.lock().unwrap();
-                let selected_id = &feed[self.tweets_selected_index];
-                self.events
-                    .send(InternalEvent::LogTweet(selected_id.clone()))
-                    .unwrap();
-            }
+            KeyCode::Char('i') => self.log_selected_tweet(),
             KeyCode::Char('n') => self.do_load_page_of_tweets(false),
             _ => self.scroll_buffer.handle_key_event(event),
         }

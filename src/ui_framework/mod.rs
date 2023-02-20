@@ -7,6 +7,8 @@ pub mod bounding_box;
 pub mod scroll_buffer;
 
 pub trait Render {
+    // CR-soon: it's actually pretty tricky for implementers to get invalidation logic correct by
+    // hand.  Maybe think a bit harder about how to make this more foolproof.
     fn should_render(&self) -> bool;
 
     /// NB: [render] takes [&mut self] since there isn't a separate notification to component that
