@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct BottomBar {
     store: Arc<Store>,
     num_tasks_in_flight: usize,
+    should_render: bool,
 }
 
 impl BottomBar {
@@ -18,15 +19,21 @@ impl BottomBar {
         Self {
             store: store.clone(),
             num_tasks_in_flight: 0,
+            should_render: true,
         }
     }
 
     pub fn set_num_tasks_in_flight(&mut self, n: usize) {
         self.num_tasks_in_flight = n;
+        self.should_render = true;
     }
 }
 
 impl Render for BottomBar {
+    fn should_render(&self) -> bool {
+        self.should_render
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
         let feed_length = tweets_reverse_chronological.len();

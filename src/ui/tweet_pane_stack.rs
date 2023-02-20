@@ -1,7 +1,7 @@
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::InternalEvent;
 use crate::ui_framework::bounding_box::BoundingBox;
-use crate::ui_framework::line_buffer::{LineBuffer, LineSegment};
+use crate::ui_framework::scroll_buffer::{ScrollBuffer, TextSegment};
 use crate::ui_framework::{Input, Render};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
@@ -131,7 +131,7 @@ impl TweetPane {
 }
 
 fn render_tweet(
-    line_buffer: &mut LineBuffer,
+    line_buffer: &mut ScrollBuffer,
     width: u16,
     tweet_id: &str,
     tweet: &Option<&api::Tweet>,
@@ -144,22 +144,22 @@ fn render_tweet(
         let tweet_lines = textwrap::wrap(&tweet.text, width.saturating_sub(1) as usize);
 
         // CR-someday: DSL quote macro, if worthwhile
-        line_buffer.push(vec![LineSegment::plain(&format!("{tweet_time}"))]);
-        line_buffer.push(vec![LineSegment::plain(&format!(
+        line_buffer.push(vec![TextSegment::plain(&format!("{tweet_time}"))]);
+        line_buffer.push(vec![TextSegment::plain(&format!(
             "@{tweet_author_username} [{tweet_author_name}]"
         ))]);
         line_buffer.push(vec![]);
 
         for line in tweet_lines {
-            line_buffer.push(vec![LineSegment::plain(&line)]);
+            line_buffer.push(vec![TextSegment::plain(&line)]);
         }
     } else {
-        line_buffer.push(vec![LineSegment::plain(&format!("<tweet id: {tweet_id}>"))]);
+        line_buffer.push(vec![TextSegment::plain(&format!("<tweet id: {tweet_id}>"))]);
     }
 }
 
 fn render_tweet_reply(
-    line_buffer: &mut LineBuffer,
+    line_buffer: &mut ScrollBuffer,
     width: u16,
     reply_id: &str,
     reply: &Option<&api::Tweet>,
@@ -171,8 +171,8 @@ fn render_tweet_reply(
         let reply_author = format!("@{reply_author} ");
 
         let mut line = vec![
-            LineSegment::plain("    ↪ "),
-            LineSegment::color(&reply_author, Colors::new(Color::DarkCyan, Color::Black)),
+            TextSegment::plain("    ↪ "),
+            TextSegment::color(&reply_author, Colors::new(Color::DarkCyan, Color::Black)),
         ];
 
         // TODO: this should be factored, same as feed_pane
@@ -181,23 +181,27 @@ fn render_tweet_reply(
         let remaining_length = width.saturating_sub((reply_author.len() + 6) as u16) as usize;
         let lines = textwrap::wrap(&formatted, remaining_length);
         if lines.len() == 1 {
-            line.push(LineSegment::plain(&lines[0]));
+            line.push(TextSegment::plain(&lines[0]));
         } else if lines.len() > 1 {
             // Rewrap lines to accommodate ellipsis (…), which may knock out a word
             let remaining_length = remaining_length.saturating_sub(1);
             let lines = textwrap::wrap(&formatted, remaining_length);
-            line.push(LineSegment::plain(&format!("{}…", &lines[0])));
+            line.push(TextSegment::plain(&format!("{}…", &lines[0])));
         }
 
         line_buffer.push(line);
     } else {
-        line_buffer.push(vec![LineSegment::plain(&format!(
+        line_buffer.push(vec![TextSegment::plain(&format!(
             "    ↪ <reply tweet id: {reply_id}>"
         ))]);
     }
 }
 
 impl Render for TweetPane {
+    fn should_render(&self) -> bool {
+        todo!()
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let BoundingBox {
             left,
@@ -208,7 +212,7 @@ impl Render for TweetPane {
 
         self.last_known_height = height;
 
-        let mut line_buffer = LineBuffer::new();
+        let mut line_buffer = ScrollBuffer::new();
         let mut line_cursor_top: usize = 0;
         let tweets = self.tweets.lock().unwrap();
 
@@ -219,7 +223,7 @@ impl Render for TweetPane {
 
             let tweet = tweets.get(&*in_reply_to_id);
             render_tweet(&mut line_buffer, width, &in_reply_to_id, &tweet);
-            line_buffer.push(vec![LineSegment::plain("↖ in reply to")]);
+            line_buffer.push(vec![TextSegment::plain("↖ in reply to")]);
             line_buffer.push(vec![]);
         }
 
@@ -247,7 +251,7 @@ impl Render for TweetPane {
 
         // TODO: compute correct from_line and to_line, requires some thinking about how scrolling works exactly
 
-        line_buffer.render(stdout, (left, top), 0, height as usize)?;
+        // line_buffer.render(stdout, (left, top), 0, height as usize)?;
 
         Ok(())
     }
@@ -313,6 +317,10 @@ impl TweetPaneStack {
 }
 
 impl Render for TweetPaneStack {
+    fn should_render(&self) -> bool {
+        todo!()
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let BoundingBox {
             left,

@@ -41,10 +41,8 @@ pub enum Mode {
 ///
 /// Try to keep the scope limited to actually global events; for component-to-component events,
 /// consider directly coupling those pieces together.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub enum InternalEvent {
-    #[default]
-    FeedPaneInvalidated,
     SelectTweet(String),
     HydrateSelectedTweet(TweetPrimer),
     RegisterTask(tokio::task::JoinHandle<()>),
@@ -169,10 +167,6 @@ impl UI {
 
     async fn handle_internal_event(&mut self, event: InternalEvent) {
         match event {
-            InternalEvent::FeedPaneInvalidated => {
-                self.feed_pane.should_render = true;
-                self.bottom_bar.should_render = true;
-            }
             InternalEvent::SelectTweet(tweet_id) => {
                 let tweet_primer = TweetPrimer::new(&tweet_id);
                 // self.tweet_pane_stack
@@ -186,7 +180,6 @@ impl UI {
                 self.bottom_bar
                     .component
                     .set_num_tasks_in_flight(self.tasks.len());
-                self.bottom_bar.should_render = true;
             }
             InternalEvent::LogTweet(tweet_id) => {
                 {
@@ -212,11 +205,6 @@ impl UI {
     async fn handle_terminal_event(&mut self, event: &Event) {
         match event {
             Event::Key(key_event) => match key_event.code {
-                KeyCode::Esc => {
-                    self.feed_pane.should_render = true;
-                    // self.tweet_pane_stack.should_render = true;
-                    self.bottom_bar.should_render = true;
-                }
                 KeyCode::Tab => {
                     self.focus = self.focus.next();
                     // TODO: maybe factor
@@ -267,7 +255,6 @@ impl UI {
                 // match arm handler is empty, why?
                 _ = task_event, if there_are_tasks => {
                     self.bottom_bar.component.set_num_tasks_in_flight(self.tasks.len());
-                    self.bottom_bar.should_render = true;
                 }
             }
 

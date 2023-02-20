@@ -1,3 +1,9 @@
+# Scratchpad
+
+Every component should handle it's own render invalidation.
+Implementers should be careful not to "always re-render".
+Cursor always rechecked and moved if UI detects it moved.
+
 # TODO
 
 - figure out how to highlight only accounts w/ notifs on (or seed such a list)
