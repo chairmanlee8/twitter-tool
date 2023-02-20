@@ -1,3 +1,4 @@
+use crate::store::Store;
 use crate::twitter_client::api;
 use crate::ui::{BoundingBox, Input, InternalEvent, Render};
 use anyhow::Result;
@@ -9,36 +10,33 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::io::Stdout;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub struct FeedPane {
     events: UnboundedSender<InternalEvent>,
-    tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
-    tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
-    tweets_scroll_offset: usize,
+    store: Arc<Store>,
     tweets_selected_index: usize,
+    scroll_offset: usize,
+    cursor_position: (u16, u16),
     last_known_height: u16,
 }
 
 impl FeedPane {
-    pub fn new(
-        events: &UnboundedSender<InternalEvent>,
-        tweets: &Arc<Mutex<HashMap<String, api::Tweet>>>,
-        tweets_reverse_chronological: &Arc<Mutex<Vec<String>>>,
-    ) -> Self {
+    pub fn new(events: &UnboundedSender<InternalEvent>, store: &Arc<Store>) -> Self {
         Self {
             events: events.clone(),
-            tweets: tweets.clone(),
-            tweets_reverse_chronological: tweets_reverse_chronological.clone(),
-            tweets_scroll_offset: 0,
+            store: store.clone(),
             tweets_selected_index: 0,
+            scroll_offset: 0,
+            cursor_position: (0, 0),
             last_known_height: 0,
         }
     }
 
     // CR-someday: consider changing to ID-based selection instead of absolute offset?
     fn move_selected_index(&mut self, delta: isize) {
-        let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
+        let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
         let new_index = max(0, self.tweets_selected_index as isize + delta) as usize;
         let new_index = min(
             new_index,
@@ -53,16 +51,38 @@ impl FeedPane {
                 .unwrap();
         }
 
-        if new_index < self.tweets_scroll_offset {
-            self.tweets_scroll_offset = new_index;
+        if new_index < self.scroll_offset {
+            self.scroll_offset = new_index;
             self.events
                 .send(InternalEvent::FeedPaneInvalidated)
                 .unwrap();
-        } else if new_index >= self.tweets_scroll_offset + (self.last_known_height as usize) {
+        } else if new_index >= self.scroll_offset + (self.last_known_height as usize) {
             self.events
                 .send(InternalEvent::FeedPaneInvalidated)
                 .unwrap();
+        } else {
+            // Feed pane still valid, just update cursor
+            if delta.is_positive() {
+                self.cursor_position.1 += delta as u16;
+            } else {
+                self.cursor_position.1 = self.cursor_position.1.saturating_sub(delta.abs() as u16);
+            }
         }
+    }
+
+    pub fn do_load_page_of_tweets(&self, restart: bool) {
+        let events = self.events.clone();
+        let store = self.store.clone();
+
+        let task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            match store.load_tweets_reverse_chronological(restart).await {
+                Ok(()) => events.send(InternalEvent::FeedPaneInvalidated).unwrap(),
+                Err(error) => events.send(InternalEvent::LogError(error)).unwrap(),
+            }
+        });
+
+        self.events.send(InternalEvent::RegisterTask(task)).unwrap();
     }
 }
 
@@ -75,8 +95,8 @@ impl Render for FeedPane {
             height,
         } = bounding_box;
 
-        let tweets = self.tweets.lock().unwrap();
-        let tweets_reverse_chronological = self.tweets_reverse_chronological.lock().unwrap();
+        let tweets = self.store.tweets.lock().unwrap();
+        let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
 
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
@@ -85,14 +105,19 @@ impl Render for FeedPane {
         self.last_known_height = height;
 
         // adjust scroll_offset to new height if necessary
-        if self.tweets_selected_index - self.tweets_scroll_offset >= (height as usize) {
-            self.tweets_scroll_offset = self
+        if self.tweets_selected_index - self.scroll_offset >= (height as usize) {
+            self.scroll_offset = self
                 .tweets_selected_index
                 .saturating_sub((height - 1) as usize);
         }
 
+        self.cursor_position = (
+            left + 16,
+            top + (self.tweets_selected_index - self.scroll_offset) as u16,
+        );
+
         for i in 0..height {
-            let tweet_idx = self.tweets_scroll_offset + (i as usize);
+            let tweet_idx = self.scroll_offset + (i as usize);
 
             if tweet_idx >= tweets_reverse_chronological.len() {
                 break;
@@ -137,30 +162,31 @@ impl Render for FeedPane {
 
         Ok(())
     }
+
+    fn get_cursor(&self) -> (u16, u16) {
+        return self.cursor_position;
+    }
 }
 
 impl Input for FeedPane {
-    fn handle_key_event(&mut self, event: KeyEvent) {
+    fn handle_focus(&mut self) {
+        ()
+    }
+
+    fn handle_key_event(&mut self, event: &KeyEvent) {
         match event.code {
             KeyCode::Up => self.move_selected_index(-1),
             KeyCode::Down => self.move_selected_index(1),
             KeyCode::Char('i') => {
-                let feed = self.tweets_reverse_chronological.lock().unwrap();
+                let feed = self.store.tweets_reverse_chronological.lock().unwrap();
                 let selected_id = &feed[self.tweets_selected_index];
                 self.events
                     .send(InternalEvent::LogTweet(selected_id.clone()))
                     .unwrap();
             }
+            KeyCode::Char('n') => self.do_load_page_of_tweets(false),
             _ => (),
         }
-    }
-
-    fn get_cursor(&self, bounding_box: BoundingBox) -> (u16, u16) {
-        let BoundingBox { left, top, .. } = bounding_box;
-        return (
-            left + 16,
-            top + (self.tweets_selected_index - self.tweets_scroll_offset) as u16,
-        );
     }
 }
 

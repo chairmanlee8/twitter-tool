@@ -1,7 +1,6 @@
 # TODO
 
 - figure out how to highlight only accounts w/ notifs on (or seed such a list)
-- word truncation on tweets pane, plus triple dot
 - show threads as [n]
 - consider moving to GUI already? or maybe see how far unicode gfx can go
 - page up/page down tweets (alt, left-[ right-])
@@ -18,8 +17,9 @@
 - side pane with full tweet expansion (incl. multiline)
 - for displaying tweets, prefix char (highlight for select, _^=reply, RT=retweet, QT=quote tweet)
 - space to expand reply, RT, QT inline
-- consider storing tweet ids as u64
+- consider storing tweet ids as u64; at the very least, type alias the String
 - remove "as usize" casts these are unsafe?
+- test resize behavior
 
 # Some Thoughts
 

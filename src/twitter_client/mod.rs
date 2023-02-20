@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::fs;
 use url::Url;
 
+#[derive(Debug, Clone)]
 pub struct TwitterClient {
     https_client: Client<HttpsConnector<HttpConnector>>,
     twitter_client_id: String,

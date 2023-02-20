@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     let me = twitter_client.me().await?;
     println!("{me:?}");
 
-    let mut ui = ui::UI::new(twitter_client, me);
-    ui.do_load_page_of_tweets(true);
+    let mut ui = ui::UI::new(twitter_client, &me);
+    ui.initialize();
     ui.event_loop().await
 }

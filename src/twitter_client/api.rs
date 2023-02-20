@@ -1,14 +1,14 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Response<Data, Includes> {
     pub data: Data,
     pub includes: Option<Includes>,
     pub meta: Option<Meta>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
     pub next_token: Option<String>,
     pub result_count: i64,
@@ -16,7 +16,7 @@ pub struct Meta {
     pub oldest_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
     pub name: String,
