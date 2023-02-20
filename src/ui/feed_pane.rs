@@ -1,15 +1,14 @@
 use crate::store::Store;
-use crate::twitter_client::api;
-use crate::ui::{BoundingBox, Input, InternalEvent, Render};
+use crate::ui::InternalEvent;
+use crate::ui_framework::{bounding_box::BoundingBox, Input, Render};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::{self, Color};
 use crossterm::{cursor, queue};
 use regex::Regex;
 use std::cmp::{max, min};
-use std::collections::HashMap;
 use std::io::Stdout;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 

@@ -1,6 +1,5 @@
 mod bottom_bar;
 mod feed_pane;
-mod line_buffer;
 mod tweet_pane_stack;
 
 use crate::store::Store;
@@ -8,6 +7,8 @@ use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::BottomBar;
 use crate::ui::feed_pane::FeedPane;
 use crate::ui::tweet_pane_stack::{TweetPaneStack, TweetPrimer};
+use crate::ui_framework::bounding_box::BoundingBox;
+use crate::ui_framework::{Component, Input};
 use anyhow::{anyhow, Context, Error, Result};
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
@@ -34,78 +35,21 @@ pub enum Mode {
     Interactive,
 }
 
+/// NB: not totally comfortable with this event bus architecture; the loose coupling is convenient
+/// but it introduces non-deterministic delay, and feels overly general (over time I guess there
+/// will end up being too many enum variants.
+///
+/// Try to keep the scope limited to actually global events; for component-to-component events,
+/// consider directly coupling those pieces together.
 #[derive(Debug, Default)]
 pub enum InternalEvent {
     #[default]
-    Refresh,
     FeedPaneInvalidated,
     SelectTweet(String),
     HydrateSelectedTweet(TweetPrimer),
     RegisterTask(tokio::task::JoinHandle<()>),
     LogTweet(String),
     LogError(Error),
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct BoundingBox {
-    pub left: u16,
-    pub top: u16,
-    pub width: u16,
-    pub height: u16,
-}
-
-impl BoundingBox {
-    pub fn new(left: u16, top: u16, width: u16, height: u16) -> Self {
-        Self {
-            left,
-            top,
-            width,
-            height,
-        }
-    }
-}
-
-pub trait Render {
-    // NB: [render] takes [&mut self] since there isn't a separate notification to component that
-    // their bbox changed
-    fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()>;
-
-    fn get_cursor(&self) -> (u16, u16);
-}
-
-pub trait Input {
-    fn handle_focus(&mut self);
-    fn handle_key_event(&mut self, event: &KeyEvent);
-}
-
-// CR-someday: pub trait Animate (or maybe combine with Render)
-
-struct Component<T: Render + Input> {
-    pub should_render: bool,
-    pub bounding_box: BoundingBox,
-    pub component: T,
-}
-
-impl<T: Render + Input> Component<T> {
-    pub fn new(component: T) -> Self {
-        Self {
-            should_render: true,
-            bounding_box: BoundingBox::default(),
-            component,
-        }
-    }
-
-    pub fn render_if_necessary(&mut self, stdout: &mut Stdout) -> Result<()> {
-        if self.should_render {
-            self.component.render(stdout, self.bounding_box)?;
-            self.should_render = false;
-        }
-        Ok(())
-    }
-
-    pub fn get_cursor(&self) -> (u16, u16) {
-        self.component.get_cursor()
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -134,8 +78,6 @@ impl Focus {
 pub struct UI {
     stdout: Stdout,
     mode: Mode,
-    // NB: don't abuse the event bus for component-to-component communication, this is designed for
-    // truly "global" concerns like tasks and logging
     events: UnboundedReceiver<InternalEvent>,
     tasks: FuturesUnordered<tokio::task::JoinHandle<()>>,
     store: Arc<Store>,
@@ -227,7 +169,6 @@ impl UI {
 
     async fn handle_internal_event(&mut self, event: InternalEvent) {
         match event {
-            InternalEvent::Refresh => (),
             InternalEvent::FeedPaneInvalidated => {
                 self.feed_pane.should_render = true;
                 self.bottom_bar.should_render = true;
@@ -284,9 +225,6 @@ impl UI {
                         // Focus::TweetPaneStack => self.tweet_pane_stack.component.handle_focus(),
                         _ => (),
                     };
-                }
-                KeyCode::Char('h') => {
-                    self.log_message("hello").unwrap();
                 }
                 KeyCode::Char('q') => {
                     reset();

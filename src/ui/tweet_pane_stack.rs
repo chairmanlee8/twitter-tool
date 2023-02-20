@@ -1,6 +1,8 @@
 use crate::twitter_client::{api, TwitterClient};
-use crate::ui::line_buffer::{LineBuffer, LineSegment};
-use crate::ui::{BoundingBox, Input, InternalEvent, Render};
+use crate::ui::InternalEvent;
+use crate::ui_framework::bounding_box::BoundingBox;
+use crate::ui_framework::line_buffer::{LineBuffer, LineSegment};
+use crate::ui_framework::{Input, Render};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use crossterm::style::{Color, Colors};

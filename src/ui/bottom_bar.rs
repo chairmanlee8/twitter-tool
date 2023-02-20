@@ -1,13 +1,12 @@
 use crate::store::Store;
-use crate::ui::{BoundingBox, Input, InternalEvent, Render};
+use crate::ui_framework::{bounding_box::BoundingBox, Input, Render};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use crossterm::style::Color;
 use crossterm::terminal::{self, ClearType};
 use crossterm::{cursor, queue, style};
-use futures_util::stream::FuturesUnordered;
 use std::io::{Stdout, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct BottomBar {
     store: Arc<Store>,

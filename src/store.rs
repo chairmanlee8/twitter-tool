@@ -1,5 +1,5 @@
 use crate::twitter_client::{api, TwitterClient};
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as AsyncMutex;
@@ -27,28 +27,6 @@ impl Store {
         }
     }
 
-    // TODO: idea is, async shouldn't be blocking anyways, tokio handles it all top-level
-    // as long as we don't await in the main event loop!
-    // goal is to get rid of the internal event loop? but why
-    // perhaps we want more event loop instead of less
-    // need to make an ideological commitment
-    //
-    // committed to NOT using event loop as is, don't really care for this stuff to be serialized
-    // instead, event loop just polls for key input or 15fps timer to repaint
-    // (most repaints should be no-op as dictated by dirty flag)
-    // for instant response, handle() returns bool, if true, immediately repaint after
-    // event processing finishes
-    //
-    // everything else happens on best effort basis
-    //
-    // we can put up an event loop later for serializable actions (undo/redo stack)
-    //
-    // BUT: how to set dirty bit "at a distance" (one component effects another)?
-    // dumb way is "re-render to line buffer always, then repaint diff always" but without this
-    // heavy machinery, what do?
-    //
-    // Maybe, back to the message bus lmao. But only for Store events...?
-    //
     // pub async fn load_tweet(&self, tweet_id: &str) {}
 
     // CR: need to sift results
