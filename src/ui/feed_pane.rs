@@ -176,26 +176,36 @@ impl Input for FeedPane {
     }
 
     fn handle_key_event(&mut self, event: &KeyEvent) {
-        match self.focus {
-            Focus::FeedPane => match event.code {
-                KeyCode::Char('i') => self.log_selected_tweet(),
-                KeyCode::Char('n') => self.do_load_page_of_tweets(false),
-                _ => {
-                    self.scroll_buffer.handle_key_event(event);
+        match event.code {
+            KeyCode::Tab => {
+                let next_focus = match self.focus {
+                    Focus::FeedPane => Focus::TweetPaneStack,
+                    Focus::TweetPaneStack => Focus::FeedPane,
+                };
+                self.focus = next_focus;
+                self.handle_focus();
+            }
+            _ => match self.focus {
+                Focus::FeedPane => match event.code {
+                    KeyCode::Char('i') => self.log_selected_tweet(),
+                    KeyCode::Char('n') => self.do_load_page_of_tweets(false),
+                    _ => {
+                        self.scroll_buffer.handle_key_event(event);
 
-                    let line_no = self.scroll_buffer.get_cursor().1;
-                    {
-                        let feed = self.store.tweets_reverse_chronological.lock().unwrap();
-                        if let Some(tweet_id) = feed.get(line_no as usize) {
-                            self.tweet_selected_id = tweet_id.clone();
+                        let line_no = self.scroll_buffer.get_cursor_line();
+                        {
+                            let feed = self.store.tweets_reverse_chronological.lock().unwrap();
+                            if let Some(tweet_id) = feed.get(line_no as usize) {
+                                self.tweet_selected_id = tweet_id.clone();
+                            }
                         }
+                        self.tweet_pane
+                            .component
+                            .set_tweet_id(&self.tweet_selected_id);
                     }
-                    self.tweet_pane
-                        .component
-                        .set_tweet_id(&self.tweet_selected_id);
-                }
+                },
+                Focus::TweetPaneStack => self.tweet_pane.component.handle_key_event(event),
             },
-            Focus::TweetPaneStack => self.tweet_pane.component.handle_key_event(event),
         }
     }
 }

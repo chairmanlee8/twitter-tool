@@ -72,6 +72,10 @@ impl ScrollBuffer {
 
         self.cursor_position = (x_offset, new_offset);
     }
+
+    pub fn get_cursor_line(&self) -> usize {
+        self.cursor_position.1
+    }
 }
 
 impl Render for ScrollBuffer {
