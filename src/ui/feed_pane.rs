@@ -1,7 +1,8 @@
 use crate::store::Store;
+use crate::ui::tweet_pane::TweetPane;
 use crate::ui::InternalEvent;
 use crate::ui_framework::scroll_buffer::{ScrollBuffer, TextSegment};
-use crate::ui_framework::{bounding_box::BoundingBox, Input, Render};
+use crate::ui_framework::{bounding_box::BoundingBox, Component, Input, Render};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::{Color, Colors};
@@ -12,24 +13,38 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum Focus {
+    FeedPane,
+    TweetPaneStack,
+}
+
 pub struct FeedPane {
     events: UnboundedSender<InternalEvent>,
     store: Arc<Store>,
     scroll_buffer: ScrollBuffer,
     should_update_scroll_buffer: Arc<AtomicBool>,
     display_width: usize,
-    tweets_selected_index: usize,
+    focus: Focus,
+    tweet_selected_id: String,
+    tweet_pane: Component<TweetPane>,
 }
 
 impl FeedPane {
     pub fn new(events: &UnboundedSender<InternalEvent>, store: &Arc<Store>) -> Self {
+        let tweet_selected_id = String::from("0");
+        let tweet_pane = Component::new(TweetPane::new(events, store, &tweet_selected_id));
+
         Self {
             events: events.clone(),
             store: store.clone(),
             scroll_buffer: ScrollBuffer::new(),
             should_update_scroll_buffer: Arc::new(AtomicBool::new(true)),
             display_width: 0,
-            tweets_selected_index: 0,
+            focus: Focus::FeedPane,
+            tweet_selected_id,
+            tweet_pane,
         }
     }
 
@@ -77,7 +92,8 @@ impl FeedPane {
             self.scroll_buffer.push(segments);
         }
 
-        self.scroll_buffer.move_cursor(0);
+        let y = self.scroll_buffer.get_cursor().1;
+        self.scroll_buffer.move_cursor_to(16, y as usize);
         self.should_update_scroll_buffer
             .store(false, Ordering::SeqCst);
     }
@@ -99,10 +115,8 @@ impl FeedPane {
     }
 
     pub fn log_selected_tweet(&self) {
-        let feed = self.store.tweets_reverse_chronological.lock().unwrap();
-        let selected_id = &feed[self.tweets_selected_index];
         self.events
-            .send(InternalEvent::LogTweet(selected_id.clone()))
+            .send(InternalEvent::LogTweet(self.tweet_selected_id.clone()))
             .unwrap();
     }
 }
@@ -111,40 +125,77 @@ impl Render for FeedPane {
     fn should_render(&self) -> bool {
         self.should_update_scroll_buffer.load(Ordering::SeqCst)
             || self.scroll_buffer.should_render()
+            || self.tweet_pane.component.should_render()
     }
 
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         // CR-someday: does using SeqCst have a performance impact?  Frankly, we already use Mutex
         // in the render loop, so I'm not sure it matters.
-        let width = bounding_box.width as usize;
+        let BoundingBox { left, width, .. } = bounding_box;
+        let half_width = ((width as usize) / 2).saturating_sub(1);
 
-        if self.should_update_scroll_buffer.load(Ordering::SeqCst) || self.display_width != width {
-            self.display_width = width;
+        if self.should_update_scroll_buffer.load(Ordering::SeqCst)
+            || self.display_width != half_width as usize
+        {
+            self.display_width = half_width;
             self.update_scroll_buffer();
         }
 
-        self.scroll_buffer.render(stdout, bounding_box)?;
+        self.scroll_buffer.render(
+            stdout,
+            BoundingBox {
+                width: half_width as u16,
+                ..bounding_box
+            },
+        )?;
+
+        self.tweet_pane.bounding_box = BoundingBox {
+            left: left + (half_width as u16) + 1,
+            width: half_width.saturating_sub(2) as u16,
+            ..bounding_box
+        };
+        self.tweet_pane.render_if_necessary(stdout)?;
 
         Ok(())
     }
 
     fn get_cursor(&self) -> (u16, u16) {
-        let cursor = self.scroll_buffer.get_cursor();
-        // CR: hmm
-        (16, cursor.1)
+        match self.focus {
+            Focus::FeedPane => self.scroll_buffer.get_cursor(),
+            Focus::TweetPaneStack => self.tweet_pane.get_cursor(),
+        }
     }
 }
 
 impl Input for FeedPane {
     fn handle_focus(&mut self) {
-        self.scroll_buffer.handle_focus()
+        match self.focus {
+            Focus::FeedPane => self.scroll_buffer.handle_focus(),
+            Focus::TweetPaneStack => self.tweet_pane.component.handle_focus(),
+        }
     }
 
     fn handle_key_event(&mut self, event: &KeyEvent) {
-        match event.code {
-            KeyCode::Char('i') => self.log_selected_tweet(),
-            KeyCode::Char('n') => self.do_load_page_of_tweets(false),
-            _ => self.scroll_buffer.handle_key_event(event),
+        match self.focus {
+            Focus::FeedPane => match event.code {
+                KeyCode::Char('i') => self.log_selected_tweet(),
+                KeyCode::Char('n') => self.do_load_page_of_tweets(false),
+                _ => {
+                    self.scroll_buffer.handle_key_event(event);
+
+                    let line_no = self.scroll_buffer.get_cursor().1;
+                    {
+                        let feed = self.store.tweets_reverse_chronological.lock().unwrap();
+                        if let Some(tweet_id) = feed.get(line_no as usize) {
+                            self.tweet_selected_id = tweet_id.clone();
+                        }
+                    }
+                    self.tweet_pane
+                        .component
+                        .set_tweet_id(&self.tweet_selected_id);
+                }
+            },
+            Focus::TweetPaneStack => self.tweet_pane.component.handle_key_event(event),
         }
     }
 }

@@ -1,12 +1,13 @@
 mod bottom_bar;
 mod feed_pane;
+mod tweet_pane;
 mod tweet_pane_stack;
 
 use crate::store::Store;
 use crate::twitter_client::{api, TwitterClient};
 use crate::ui::bottom_bar::BottomBar;
 use crate::ui::feed_pane::FeedPane;
-use crate::ui::tweet_pane_stack::{TweetPaneStack, TweetPrimer};
+use crate::ui::tweet_pane::TweetPane;
 use crate::ui_framework::bounding_box::BoundingBox;
 use crate::ui_framework::{Component, Input};
 use anyhow::{anyhow, Context, Error, Result};
@@ -19,13 +20,11 @@ use crossterm::{
 };
 use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
-use std::collections::HashMap;
 use std::fs;
 use std::io::{stdout, Stdout, Write};
 use std::process;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::sync::Mutex as AsyncMutex;
+use std::sync::Arc;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
@@ -43,34 +42,9 @@ pub enum Mode {
 /// consider directly coupling those pieces together.
 #[derive(Debug)]
 pub enum InternalEvent {
-    SelectTweet(String),
-    HydrateSelectedTweet(TweetPrimer),
     RegisterTask(tokio::task::JoinHandle<()>),
     LogTweet(String),
     LogError(Error),
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[repr(u8)]
-enum Focus {
-    FeedPane,
-    TweetPaneStack,
-}
-
-impl Focus {
-    pub fn next(&self) -> Self {
-        match self {
-            Self::FeedPane => Self::TweetPaneStack,
-            Self::TweetPaneStack => Self::FeedPane,
-        }
-    }
-
-    pub fn prev(&self) -> Self {
-        match self {
-            Self::FeedPane => Self::TweetPaneStack,
-            Self::TweetPaneStack => Self::FeedPane,
-        }
-    }
 }
 
 pub struct UI {
@@ -80,9 +54,7 @@ pub struct UI {
     tasks: FuturesUnordered<tokio::task::JoinHandle<()>>,
     store: Arc<Store>,
     feed_pane: Component<FeedPane>,
-    // tweet_pane_stack: Component<TweetPaneStack>,
     bottom_bar: Component<BottomBar>,
-    focus: Focus,
 }
 
 impl UI {
@@ -93,7 +65,6 @@ impl UI {
         let store = Arc::new(Store::new(twitter_client, twitter_user));
 
         let feed_pane = FeedPane::new(&events_tx, &store);
-        // let tweet_pane = TweetPaneStack::new(&tx, &tweets);
         let bottom_bar = BottomBar::new(&store);
 
         let mut this = Self {
@@ -103,9 +74,7 @@ impl UI {
             tasks: FuturesUnordered::new(),
             store,
             feed_pane: Component::new(feed_pane),
-            // tweet_pane_stack: Component::new(tweet_pane),
             bottom_bar: Component::new(bottom_bar),
-            focus: Focus::FeedPane,
         };
 
         this.resize(cols, rows);
@@ -134,10 +103,7 @@ impl UI {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        let half_width = cols / 2;
-        self.feed_pane.bounding_box = BoundingBox::new(0, 0, half_width - 1, rows - 2);
-        // self.tweet_pane_stack.bounding_box =
-        //     BoundingBox::new(half_width + 1, 0, half_width, rows - 2);
+        self.feed_pane.bounding_box = BoundingBox::new(0, 0, cols, rows - 2);
         self.bottom_bar.bounding_box = BoundingBox::new(0, rows - 1, cols, 1);
     }
 
@@ -145,16 +111,11 @@ impl UI {
         self.set_mode(Mode::Interactive)?;
 
         self.feed_pane.render_if_necessary(&mut self.stdout)?;
-        // self.tweet_pane_stack
-        //     .render_if_necessary(&mut self.stdout)?;
         self.bottom_bar.render_if_necessary(&mut self.stdout)?;
 
-        let focus = match self.focus {
-            Focus::FeedPane => self.feed_pane.get_cursor(),
-            // Focus::TweetPaneStack => self.tweet_pane_stack.get_cursor(),
-            _ => (0, 0),
-        };
+        let focus = self.feed_pane.get_cursor();
         queue!(&self.stdout, cursor::MoveTo(focus.0, focus.1))?;
+
         self.stdout.flush()?;
         Ok(())
     }
@@ -167,14 +128,6 @@ impl UI {
 
     async fn handle_internal_event(&mut self, event: InternalEvent) {
         match event {
-            InternalEvent::SelectTweet(tweet_id) => {
-                let tweet_primer = TweetPrimer::new(&tweet_id);
-                // self.tweet_pane_stack
-                //     .component
-                //     .open_tweet_pane(&tweet_primer);
-                // self.tweet_pane_stack.should_render = true;
-            }
-            InternalEvent::HydrateSelectedTweet(_) => (),
             InternalEvent::RegisterTask(task) => {
                 self.tasks.push(task);
                 self.bottom_bar
@@ -205,26 +158,11 @@ impl UI {
     async fn handle_terminal_event(&mut self, event: &Event) {
         match event {
             Event::Key(key_event) => match key_event.code {
-                KeyCode::Tab => {
-                    self.focus = self.focus.next();
-                    // TODO: maybe factor
-                    match self.focus {
-                        Focus::FeedPane => self.feed_pane.component.handle_focus(),
-                        // Focus::TweetPaneStack => self.tweet_pane_stack.component.handle_focus(),
-                        _ => (),
-                    };
-                }
                 KeyCode::Char('q') => {
                     reset();
                     process::exit(0);
                 }
-                _ => match self.focus {
-                    Focus::FeedPane => self.feed_pane.component.handle_key_event(key_event),
-                    // Focus::TweetPaneStack => {
-                    //     self.tweet_pane_stack.component.handle_key_event(key_event)
-                    // }
-                    _ => (),
-                },
+                _ => self.feed_pane.component.handle_key_event(key_event),
             },
             Event::Resize(cols, rows) => self.resize(*cols, *rows),
             _ => (),

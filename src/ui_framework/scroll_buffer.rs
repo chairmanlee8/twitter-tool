@@ -13,7 +13,7 @@ pub struct ScrollBuffer {
     lines: Vec<Vec<TextSegment>>,
     display_height: usize,
     display_offset: usize,
-    cursor_offset: usize,
+    cursor_position: (usize, usize),
     should_render: bool,
 }
 
@@ -23,13 +23,23 @@ impl ScrollBuffer {
             lines: Vec::new(),
             display_height: 0,
             display_offset: 0,
-            cursor_offset: 0,
+            cursor_position: (0, 0),
             should_render: true,
         }
     }
 
     pub fn push(&mut self, line: Vec<TextSegment>) {
         self.lines.push(line);
+        // CR: not optimal
+        self.should_render = true;
+    }
+
+    pub fn push_newline(&mut self) {
+        self.push(vec![]);
+    }
+
+    pub fn append(&mut self, lines: &mut Vec<Vec<TextSegment>>) {
+        self.lines.append(lines);
         // CR: not optimal
         self.should_render = true;
     }
@@ -44,8 +54,13 @@ impl ScrollBuffer {
     }
 
     pub fn move_cursor(&mut self, delta: isize) {
-        let new_offset = max(0, self.cursor_offset as isize + delta) as usize;
-        let new_offset = min(new_offset, self.lines.len().saturating_sub(1));
+        let line_no = max(0, self.cursor_position.1 as isize + delta) as usize;
+        self.move_cursor_to(self.cursor_position.0, line_no);
+    }
+
+    // CR-soon: this API has turned a bit wonky
+    pub fn move_cursor_to(&mut self, x_offset: usize, line_no: usize) {
+        let new_offset = min(line_no, self.lines.len().saturating_sub(1));
 
         if new_offset < self.display_offset {
             self.display_offset = new_offset;
@@ -55,7 +70,7 @@ impl ScrollBuffer {
             self.should_render = true;
         }
 
-        self.cursor_offset = new_offset;
+        self.cursor_position = (x_offset, new_offset);
     }
 }
 
@@ -112,8 +127,8 @@ impl Render for ScrollBuffer {
 
     fn get_cursor(&self) -> (u16, u16) {
         (
-            0,
-            self.cursor_offset.saturating_sub(self.display_offset) as u16,
+            self.cursor_position.0 as u16,
+            self.cursor_position.1.saturating_sub(self.display_offset) as u16,
         )
     }
 }
