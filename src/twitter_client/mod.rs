@@ -169,7 +169,6 @@ impl TwitterClient {
             .map(|user| (user.id.clone(), user))
             .collect();
 
-        // CR: does Cow help here vs Clone?
         let tweets: Vec<api::Tweet> = resp
             .data
             .iter()
