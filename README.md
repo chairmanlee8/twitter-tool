@@ -1,1 +1,1 @@
-![](https://github.com/chairmanlee8/twitter-tool-rs/preview.gif)
+![](https://github.com/chairmanlee8/twitter-tool-rs/blob/main/preview.gif)
