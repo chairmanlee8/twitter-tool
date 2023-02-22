@@ -87,4 +87,46 @@ impl Store {
 
         Ok(())
     }
+
+    // CR: this is almost the same function
+    pub async fn load_user_tweets(&self, user_id: &str, restart: bool) -> Result<()> {
+        let mut tweets_page_token = self
+            .tweets_page_token
+            .try_lock()
+            .with_context(|| anyhow!("Already in-flight"))?;
+
+        let mut maybe_page_token = None;
+        // NB: require page token if continuing to next page
+        if !restart {
+            let next_page_token = tweets_page_token.as_ref().ok_or(anyhow!("No more pages"))?;
+            maybe_page_token = Some(next_page_token);
+        }
+
+        let (new_tweets, page_token) = self
+            .twitter_client
+            .user_tweets(user_id, maybe_page_token)
+            .await?;
+        let mut new_tweets_reverse_chronological: Vec<String> = Vec::new();
+
+        *tweets_page_token = page_token;
+
+        {
+            let mut tweets = self.tweets.lock().unwrap();
+            for tweet in new_tweets {
+                new_tweets_reverse_chronological.push(tweet.id.clone());
+                tweets.insert(tweet.id.clone(), tweet);
+            }
+        }
+        {
+            let mut tweets_reverse_chronological =
+                self.tweets_reverse_chronological.lock().unwrap();
+            if restart {
+                *tweets_reverse_chronological = new_tweets_reverse_chronological;
+            } else {
+                tweets_reverse_chronological.append(&mut new_tweets_reverse_chronological);
+            }
+        }
+
+        Ok(())
+    }
 }

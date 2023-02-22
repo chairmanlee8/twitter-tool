@@ -123,6 +123,91 @@ impl TwitterClient {
         Ok(resp.data)
     }
 
+    pub async fn user_by_username(&self, username: &str) -> Result<api::User> {
+        let access_token = self.access_token.as_ref().ok_or(anyhow!("Unauthorized"))?;
+
+        let mut uri = Url::parse(&format!(
+            "https://api.twitter.com/2/users/by/username/{username}"
+        ))?;
+
+        uri.query_pairs_mut().append_pair("user.fields", "username");
+
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(uri.to_string())
+            .header("Authorization", format!("Bearer {}", access_token.secret()))
+            .body(Body::empty())?;
+
+        let resp = self.https_client.request(req).await?;
+        let resp = hyper::body::to_bytes(resp.into_body()).await?;
+        let resp: api::Response<api::User, ()> = serde_json::from_slice(&resp)?;
+
+        Ok(resp.data)
+    }
+
+    // CR: this is almost the same function
+    pub async fn user_tweets(
+        &self,
+        user_id: &str,
+        pagination_token: Option<&String>,
+    ) -> Result<(Vec<api::Tweet>, Option<String>)> {
+        let access_token = self.access_token.as_ref().ok_or(anyhow!("Unauthorized"))?;
+
+        let mut uri = Url::parse(&format!("https://api.twitter.com/2/users/{user_id}/tweets"))?;
+
+        uri.query_pairs_mut()
+            .append_pair(
+                "tweet.fields",
+                "created_at,attachments,referenced_tweets,public_metrics,conversation_id",
+            )
+            .append_pair("user.fields", "username")
+            .append_pair("expansions", "author_id")
+            .append_pair("max_results", "100");
+
+        if let Some(pagination_token) = pagination_token {
+            uri.query_pairs_mut()
+                .append_pair("pagination_token", pagination_token);
+        }
+
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(uri.to_string())
+            .header("Authorization", format!("Bearer {}", access_token.secret()))
+            .body(Body::empty())?;
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct Includes {
+            users: Vec<api::User>,
+        }
+
+        let resp = self.https_client.request(req).await?;
+        let resp = hyper::body::to_bytes(resp.into_body()).await?;
+        let resp: api::Response<Vec<api::Tweet>, Includes> = serde_json::from_slice(&resp)?;
+
+        let includes = resp.includes.ok_or(anyhow!("Expected `includes`"))?;
+        let users: HashMap<String, &api::User> = includes
+            .users
+            .iter()
+            .map(|user| (user.id.clone(), user))
+            .collect();
+
+        let tweets: Vec<api::Tweet> = resp
+            .data
+            .iter()
+            .map(|tweet| api::Tweet {
+                author_username: users
+                    .get(&tweet.author_id)
+                    .map(|user| user.username.clone()),
+                author_name: users.get(&tweet.author_id).map(|user| user.name.clone()),
+                ..tweet.clone()
+            })
+            .collect();
+
+        let next_pagination_token = resp.meta.and_then(|meta| meta.next_token);
+
+        Ok((tweets, next_pagination_token))
+    }
+
     pub async fn timeline_reverse_chronological(
         &self,
         user_id: &str,

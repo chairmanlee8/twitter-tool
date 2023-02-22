@@ -89,8 +89,10 @@ impl UI {
 
     pub fn initialize(&mut self) {
         self.feed_pane.component.do_load_page_of_tweets(true);
+        self.set_mode(Mode::Interactive).unwrap();
     }
 
+    // CR: just return unit and panic
     fn set_mode(&mut self, mode: Mode) -> Result<()> {
         let prev_mode = self.mode;
         self.mode = mode;
@@ -114,8 +116,6 @@ impl UI {
     }
 
     pub async fn render(&mut self) -> Result<()> {
-        self.set_mode(Mode::Interactive)?;
-
         self.feed_pane.render_if_necessary(&mut self.stdout)?;
         self.bottom_bar.render_if_necessary(&mut self.stdout)?;
 
@@ -167,6 +167,7 @@ impl UI {
                 let handled = self.feed_pane.component.handle_key_event(key_event);
                 if !handled {
                     match key_event.code {
+                        KeyCode::Esc => self.set_mode(Mode::Interactive).unwrap(),
                         KeyCode::Char('q') => {
                             reset();
                             process::exit(0);

@@ -22,6 +22,11 @@ impl SearchBar {
         }
     }
 
+    // CR-soon: we can avoid clone in some situations with a get_and_clear_text() that swaps
+    pub fn get_text(&self) -> String {
+        self.text_input.clone()
+    }
+
     pub fn clear(&mut self) {
         self.text_input = "".to_string();
         self.caret_position = 0;

@@ -5,7 +5,7 @@ use crate::ui::tweet_pane::TweetPane;
 use crate::ui::InternalEvent;
 use crate::ui_framework::scroll_buffer::{ScrollBuffer, TextSegment};
 use crate::ui_framework::{bounding_box::BoundingBox, Component, Input, Render};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::{Color, Colors};
 use crossterm::{cursor, queue, style};
@@ -13,7 +13,6 @@ use regex::Regex;
 use std::io::{Stdout, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -130,7 +129,6 @@ impl FeedPane {
         let should_update_scroll_buffer = self.should_update_scroll_buffer.clone();
 
         let task = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(1)).await;
             match store.load_tweets_reverse_chronological(restart).await {
                 Ok(()) => should_update_scroll_buffer.store(true, Ordering::SeqCst),
                 Err(error) => events.send(InternalEvent::LogError(error)).unwrap(),
@@ -162,6 +160,51 @@ impl FeedPane {
                     Err(err) => self.events.send(InternalEvent::LogError(err)).unwrap(),
                 }
             }
+        }
+    }
+
+    pub fn do_search(&self) {
+        let search_term = self.search_bar.component.get_text();
+
+        // CR: factor search stuff out to somewhere
+        fn parse_twitter_handle(handle: &str) -> Option<String> {
+            let re = Regex::new(r"^(?i)@([a-z0-9_]+)$").unwrap();
+            if let Some(captures) = re.captures(handle) {
+                Some(captures.get(1).unwrap().as_str().to_string())
+            } else {
+                None
+            }
+        }
+
+        if let Some(twitter_username) = parse_twitter_handle(&search_term) {
+            let store = self.store.clone();
+            let events = self.events.clone();
+            let should_update_scroll_buffer = self.should_update_scroll_buffer.clone();
+
+            let task = tokio::spawn(async move {
+                match store
+                    .twitter_client
+                    .user_by_username(&twitter_username)
+                    .await
+                {
+                    Ok(user) => match store.load_user_tweets(&user.id, true).await {
+                        Ok(()) => should_update_scroll_buffer.store(true, Ordering::SeqCst),
+                        Err(error) => events.send(InternalEvent::LogError(error)).unwrap(),
+                    },
+                    Err(err) => events.send(InternalEvent::LogError(err)).unwrap(),
+                }
+            });
+
+            self.events.send(InternalEvent::RegisterTask(task)).unwrap();
+        } else if search_term.is_empty() {
+            self.do_load_page_of_tweets(true);
+        } else {
+            self.events
+                .send(InternalEvent::LogError(anyhow!(
+                    "Invalid search term: {}",
+                    search_term
+                )))
+                .unwrap();
         }
     }
 
@@ -271,6 +314,7 @@ impl Input for FeedPane {
                 Focus::FeedPane => match event.code {
                     KeyCode::Char('i') => self.log_selected_tweet(),
                     KeyCode::Char('n') => self.do_load_page_of_tweets(false),
+                    KeyCode::Char('r') => self.do_load_page_of_tweets(true),
                     KeyCode::Char('s') => self.do_toggle_selected_tweet_starred(),
                     KeyCode::Char('/') => {
                         self.focus = Focus::SearchBar;
@@ -291,6 +335,12 @@ impl Input for FeedPane {
                 Focus::TweetPaneStack => return self.tweet_pane.component.handle_key_event(event),
                 Focus::SearchBar => match event.code {
                     KeyCode::Esc => {
+                        self.focus = Focus::FeedPane;
+                        self.handle_focus();
+                    }
+                    KeyCode::Enter => {
+                        self.do_search();
+                        self.search_bar.component.clear();
                         self.focus = Focus::FeedPane;
                         self.handle_focus();
                     }
