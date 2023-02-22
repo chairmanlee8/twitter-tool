@@ -1,5 +1,6 @@
 mod bottom_bar;
 mod feed_pane;
+mod search_bar;
 mod tweet_pane;
 mod tweet_pane_stack;
 
@@ -162,13 +163,18 @@ impl UI {
 
     async fn handle_terminal_event(&mut self, event: &Event) {
         match event {
-            Event::Key(key_event) => match key_event.code {
-                KeyCode::Char('q') => {
-                    reset();
-                    process::exit(0);
+            Event::Key(key_event) => {
+                let handled = self.feed_pane.component.handle_key_event(key_event);
+                if !handled {
+                    match key_event.code {
+                        KeyCode::Char('q') => {
+                            reset();
+                            process::exit(0);
+                        }
+                        _ => (),
+                    }
                 }
-                _ => self.feed_pane.component.handle_key_event(key_event),
-            },
+            }
             Event::Resize(cols, rows) => self.resize(*cols, *rows),
             _ => (),
         }

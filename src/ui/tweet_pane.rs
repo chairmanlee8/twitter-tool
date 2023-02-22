@@ -329,12 +329,13 @@ impl Input for TweetPane {
         self.scroll_buffer.handle_focus()
     }
 
-    fn handle_key_event(&mut self, event: &KeyEvent) {
+    fn handle_key_event(&mut self, event: &KeyEvent) -> bool {
         match event.code {
             KeyCode::Up => (),
             KeyCode::Down => (),
-            _ => self.scroll_buffer.handle_key_event(event),
-        }
+            _ => return self.scroll_buffer.handle_key_event(event),
+        };
+        true
     }
 }
 

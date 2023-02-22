@@ -15,6 +15,8 @@ pub struct ScrollBuffer {
     display_offset: usize,
     cursor_position: (usize, usize),
     should_render: bool,
+    // CR: need to work bounding_box != last_bounding_box => should_render into the framework
+    last_bounding_box: BoundingBox,
 }
 
 impl ScrollBuffer {
@@ -25,6 +27,7 @@ impl ScrollBuffer {
             display_offset: 0,
             cursor_position: (0, 0),
             should_render: true,
+            last_bounding_box: BoundingBox::default(),
         }
     }
 
@@ -84,6 +87,11 @@ impl Render for ScrollBuffer {
     }
 
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
+        if bounding_box != self.last_bounding_box {
+            self.last_bounding_box = bounding_box;
+            self.should_render = true;
+        }
+
         if self.should_render {
             let BoundingBox {
                 left,
@@ -142,12 +150,13 @@ impl Input for ScrollBuffer {
         ()
     }
 
-    fn handle_key_event(&mut self, event: &KeyEvent) {
+    fn handle_key_event(&mut self, event: &KeyEvent) -> bool {
         match event.code {
             KeyCode::Up => self.move_cursor(-1),
             KeyCode::Down => self.move_cursor(1),
-            _ => {}
+            _ => return false,
         }
+        true
     }
 }
 

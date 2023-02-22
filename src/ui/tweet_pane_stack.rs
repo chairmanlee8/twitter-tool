@@ -105,7 +105,7 @@ impl Input for TweetPaneStack {
         // }
     }
 
-    fn handle_key_event(&mut self, _event: &KeyEvent) {
+    fn handle_key_event(&mut self, _event: &KeyEvent) -> bool {
         todo!()
     }
 }

@@ -66,7 +66,7 @@ impl Input for BottomBar {
         todo!()
     }
 
-    fn handle_key_event(&mut self, _event: &KeyEvent) {
+    fn handle_key_event(&mut self, _event: &KeyEvent) -> bool {
         todo!()
     }
 }

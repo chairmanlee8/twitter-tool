@@ -1,5 +1,6 @@
 use crate::store::Store;
 use crate::twitter_client::api;
+use crate::ui::search_bar::SearchBar;
 use crate::ui::tweet_pane::TweetPane;
 use crate::ui::InternalEvent;
 use crate::ui_framework::scroll_buffer::{ScrollBuffer, TextSegment};
@@ -7,9 +8,9 @@ use crate::ui_framework::{bounding_box::BoundingBox, Component, Input, Render};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::{Color, Colors};
+use crossterm::{cursor, queue, style};
 use regex::Regex;
-use std::borrow::Cow;
-use std::io::Stdout;
+use std::io::{Stdout, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +21,7 @@ use tokio::sync::mpsc::UnboundedSender;
 enum Focus {
     FeedPane,
     TweetPaneStack,
+    SearchBar,
 }
 
 pub struct FeedPane {
@@ -27,26 +29,31 @@ pub struct FeedPane {
     store: Arc<Store>,
     scroll_buffer: ScrollBuffer,
     should_update_scroll_buffer: Arc<AtomicBool>,
+    should_render: bool,
     display_width: usize,
     focus: Focus,
     tweet_selected_id: String,
     tweet_pane: Component<TweetPane>,
+    search_bar: Component<SearchBar>,
 }
 
 impl FeedPane {
     pub fn new(events: &UnboundedSender<InternalEvent>, store: &Arc<Store>) -> Self {
         let tweet_selected_id = String::from("0");
         let tweet_pane = Component::new(TweetPane::new(events, store, &tweet_selected_id));
+        let search_bar = Component::new(SearchBar::new());
 
         Self {
             events: events.clone(),
             store: store.clone(),
             scroll_buffer: ScrollBuffer::new(),
             should_update_scroll_buffer: Arc::new(AtomicBool::new(true)),
+            should_render: true,
             display_width: 0,
             focus: Focus::FeedPane,
             tweet_selected_id,
             tweet_pane,
+            search_bar,
         }
     }
 
@@ -170,6 +177,8 @@ impl Render for FeedPane {
         self.should_update_scroll_buffer.load(Ordering::SeqCst)
             || self.scroll_buffer.should_render()
             || self.tweet_pane.component.should_render()
+            || self.search_bar.component.should_render()
+            || self.should_render
     }
 
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
@@ -185,13 +194,38 @@ impl Render for FeedPane {
             self.update_scroll_buffer();
         }
 
-        self.scroll_buffer.render(
-            stdout,
-            BoundingBox {
+        if self.focus == Focus::SearchBar {
+            // CR: this bounding_box concept is superfluous
+            self.search_bar.bounding_box = BoundingBox {
                 width: half_width as u16,
+                height: 1,
                 ..bounding_box
-            },
-        )?;
+            };
+            self.search_bar.render_if_necessary(stdout)?;
+
+            // CR: need a generic [clear] method
+            let str_clear = " ".repeat(half_width);
+            queue!(stdout, cursor::MoveTo(left, bounding_box.top + 1))?;
+            queue!(stdout, style::Print(str_clear))?;
+
+            self.scroll_buffer.render(
+                stdout,
+                BoundingBox {
+                    width: half_width as u16,
+                    top: bounding_box.top + 2,
+                    height: bounding_box.height.saturating_sub(2),
+                    ..bounding_box
+                },
+            )?;
+        } else {
+            self.scroll_buffer.render(
+                stdout,
+                BoundingBox {
+                    width: half_width as u16,
+                    ..bounding_box
+                },
+            )?;
+        }
 
         self.tweet_pane.bounding_box = BoundingBox {
             left: left + (half_width as u16) + 1,
@@ -200,6 +234,7 @@ impl Render for FeedPane {
         };
         self.tweet_pane.render_if_necessary(stdout)?;
 
+        stdout.flush()?;
         Ok(())
     }
 
@@ -207,6 +242,7 @@ impl Render for FeedPane {
         match self.focus {
             Focus::FeedPane => self.scroll_buffer.get_cursor(),
             Focus::TweetPaneStack => self.tweet_pane.get_cursor(),
+            Focus::SearchBar => self.search_bar.get_cursor(),
         }
     }
 }
@@ -216,15 +252,17 @@ impl Input for FeedPane {
         match self.focus {
             Focus::FeedPane => self.scroll_buffer.handle_focus(),
             Focus::TweetPaneStack => self.tweet_pane.component.handle_focus(),
+            Focus::SearchBar => self.search_bar.component.handle_focus(),
         }
     }
 
-    fn handle_key_event(&mut self, event: &KeyEvent) {
+    fn handle_key_event(&mut self, event: &KeyEvent) -> bool {
         match event.code {
             KeyCode::Tab => {
                 let next_focus = match self.focus {
                     Focus::FeedPane => Focus::TweetPaneStack,
                     Focus::TweetPaneStack => Focus::FeedPane,
+                    Focus::SearchBar => Focus::SearchBar,
                 };
                 self.focus = next_focus;
                 self.handle_focus();
@@ -234,18 +272,33 @@ impl Input for FeedPane {
                     KeyCode::Char('i') => self.log_selected_tweet(),
                     KeyCode::Char('n') => self.do_load_page_of_tweets(false),
                     KeyCode::Char('s') => self.do_toggle_selected_tweet_starred(),
+                    KeyCode::Char('/') => {
+                        self.focus = Focus::SearchBar;
+                        self.handle_focus();
+                        self.should_render = true;
+                    }
                     _ => {
-                        self.scroll_buffer.handle_key_event(event);
+                        let handled = self.scroll_buffer.handle_key_event(event);
 
                         if let Some(tweet_id) = self.get_selected_tweet_id() {
                             self.tweet_selected_id = tweet_id.clone();
                             self.tweet_pane.component.set_tweet_id(&tweet_id);
                         }
+
+                        return handled;
                     }
                 },
-                Focus::TweetPaneStack => self.tweet_pane.component.handle_key_event(event),
+                Focus::TweetPaneStack => return self.tweet_pane.component.handle_key_event(event),
+                Focus::SearchBar => match event.code {
+                    KeyCode::Esc => {
+                        self.focus = Focus::FeedPane;
+                        self.handle_focus();
+                    }
+                    _ => return self.search_bar.component.handle_key_event(event),
+                },
             },
-        }
+        };
+        true
     }
 }
 

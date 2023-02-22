@@ -20,7 +20,10 @@ pub trait Render {
 
 pub trait Input {
     fn handle_focus(&mut self);
-    fn handle_key_event(&mut self, event: &KeyEvent);
+
+    /// Returns true if the event was handled; that is, the caller won't consider the event and run
+    /// it's own handler.
+    fn handle_key_event(&mut self, event: &KeyEvent) -> bool;
 }
 
 pub struct Component<T: Render + Input> {

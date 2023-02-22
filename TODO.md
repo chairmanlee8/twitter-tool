@@ -2,7 +2,7 @@
 
 MVP: filter-by starred accounts
 immediate implications:
-- filter-by and search-for
+- search-for and filter-by
 - star/unstar
 - show starred
 - implement RT/QT display
@@ -11,6 +11,12 @@ maybe fix the alt-mode bug and make login easier
 
 Then mint a 0.1 and organize this TODO list, add some doc on how to clean-up what's not cleaned up
 Cleanup TODOs and CRs and warnings
+
+# Issues
+
+- It's tricky to implement handle_key_event correctly; returning true/false all the way up
+- It's tricky to implement should_render semantics correctly
+- There seems to be a lot of things needed to write when implementing Render + Input; much toil
 
 # TODO
 
