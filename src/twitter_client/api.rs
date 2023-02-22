@@ -16,7 +16,7 @@ pub struct Meta {
     pub oldest_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
     pub name: String,
@@ -35,6 +35,22 @@ pub struct Tweet {
     pub referenced_tweets: Option<Vec<TweetReference>>,
     pub attachments: Option<Attachments>,
     pub public_metrics: Option<PublicMetrics>,
+}
+
+impl Tweet {
+    pub fn author(&self, fill_unknown_with: &str) -> User {
+        User {
+            id: self.author_id.clone(),
+            name: self
+                .author_name
+                .clone()
+                .unwrap_or(fill_unknown_with.to_string()),
+            username: self
+                .author_username
+                .clone()
+                .unwrap_or(fill_unknown_with.to_string()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

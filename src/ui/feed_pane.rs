@@ -1,4 +1,5 @@
 use crate::store::Store;
+use crate::twitter_client::api;
 use crate::ui::tweet_pane::TweetPane;
 use crate::ui::InternalEvent;
 use crate::ui_framework::scroll_buffer::{ScrollBuffer, TextSegment};
@@ -7,6 +8,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::style::{Color, Colors};
 use regex::Regex;
+use std::borrow::Cow;
 use std::io::Stdout;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -48,11 +50,23 @@ impl FeedPane {
         }
     }
 
+    pub fn get_selected_tweet_id(&self) -> Option<String> {
+        let line_no = self.scroll_buffer.get_cursor_line();
+        {
+            let feed = self.store.tweets_reverse_chronological.lock().unwrap();
+            if let Some(tweet_id) = feed.get(line_no as usize) {
+                return Some(tweet_id.clone());
+            }
+        }
+        None
+    }
+
     fn update_scroll_buffer(&mut self) {
         self.scroll_buffer.clear();
 
         let tweets = self.store.tweets.lock().unwrap();
         let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
+        let user_config = self.store.user_config.lock().unwrap();
 
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();
         let str_unknown = String::from("[unknown]");
@@ -70,9 +84,14 @@ impl FeedPane {
 
             let tweet_author = tweet.author_username.as_ref().unwrap_or(&str_unknown);
             let tweet_author = format!("@{tweet_author} ");
+            let is_starred = user_config.is_starred(&tweet.author_id);
             segments.push(TextSegment::color(
                 &tweet_author,
-                Colors::new(Color::DarkCyan, Color::Reset),
+                if is_starred {
+                    Colors::new(Color::Yellow, Color::Reset)
+                } else {
+                    Colors::new(Color::DarkCyan, Color::Reset)
+                },
             ));
 
             let formatted = re_newlines.replace_all(&tweet.text, "⏎ ");
@@ -112,6 +131,31 @@ impl FeedPane {
         });
 
         self.events.send(InternalEvent::RegisterTask(task)).unwrap();
+    }
+
+    fn do_toggle_selected_tweet_starred(&mut self) {
+        if let Some(tweet_id) = self.get_selected_tweet_id() {
+            if let Some(tweet) = self.store.tweets.lock().unwrap().get(&tweet_id) {
+                {
+                    let mut user_config = self.store.user_config.lock().unwrap();
+                    let tweet_author = tweet.author("[unknown]");
+
+                    if user_config.is_starred(&tweet.author_id) {
+                        user_config.unstar_account(&tweet_author);
+                    } else {
+                        user_config.star_account(&tweet_author);
+                    }
+                }
+
+                // CR-soon: the change shouldn't commit until after the config is saved
+                match self.store.save_user_config() {
+                    Ok(()) => self
+                        .should_update_scroll_buffer
+                        .store(true, Ordering::SeqCst),
+                    Err(err) => self.events.send(InternalEvent::LogError(err)).unwrap(),
+                }
+            }
+        }
     }
 
     pub fn log_selected_tweet(&self) {
@@ -189,19 +233,14 @@ impl Input for FeedPane {
                 Focus::FeedPane => match event.code {
                     KeyCode::Char('i') => self.log_selected_tweet(),
                     KeyCode::Char('n') => self.do_load_page_of_tweets(false),
+                    KeyCode::Char('s') => self.do_toggle_selected_tweet_starred(),
                     _ => {
                         self.scroll_buffer.handle_key_event(event);
 
-                        let line_no = self.scroll_buffer.get_cursor_line();
-                        {
-                            let feed = self.store.tweets_reverse_chronological.lock().unwrap();
-                            if let Some(tweet_id) = feed.get(line_no as usize) {
-                                self.tweet_selected_id = tweet_id.clone();
-                            }
+                        if let Some(tweet_id) = self.get_selected_tweet_id() {
+                            self.tweet_selected_id = tweet_id.clone();
+                            self.tweet_pane.component.set_tweet_id(&tweet_id);
                         }
-                        self.tweet_pane
-                            .component
-                            .set_tweet_id(&self.tweet_selected_id);
                     }
                 },
                 Focus::TweetPaneStack => self.tweet_pane.component.handle_key_event(event),

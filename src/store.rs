@@ -1,6 +1,8 @@
 use crate::twitter_client::{api, TwitterClient};
+use crate::user_config::UserConfig;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
+use std::fs;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -14,17 +16,30 @@ pub struct Store {
     pub tweets: Arc<Mutex<HashMap<String, api::Tweet>>>,
     pub tweets_reverse_chronological: Arc<Mutex<Vec<String>>>,
     pub tweets_page_token: Arc<AsyncMutex<Option<String>>>,
+    pub user_config: Arc<Mutex<UserConfig>>,
 }
 
 impl Store {
-    pub fn new(twitter_client: TwitterClient, twitter_user: &api::User) -> Self {
+    pub fn new(
+        twitter_client: TwitterClient,
+        twitter_user: &api::User,
+        user_config: &UserConfig,
+    ) -> Self {
         Self {
             twitter_client,
             twitter_user: twitter_user.clone(),
             tweets: Arc::new(Mutex::new(HashMap::new())),
             tweets_reverse_chronological: Arc::new(Mutex::new(Vec::new())),
             tweets_page_token: Arc::new(AsyncMutex::new(None)),
+            user_config: Arc::new(Mutex::new(user_config.clone())),
         }
+    }
+
+    pub fn save_user_config(&self) -> Result<()> {
+        let user_config = self.user_config.lock().unwrap();
+        let user_config = serde_json::to_string(&*user_config)?;
+        fs::write("./var/.user_config", user_config)?;
+        Ok(())
     }
 
     // pub async fn load_tweet(&self, tweet_id: &str) {}

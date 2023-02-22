@@ -10,6 +10,7 @@ use crate::ui::feed_pane::FeedPane;
 use crate::ui::tweet_pane::TweetPane;
 use crate::ui_framework::bounding_box::BoundingBox;
 use crate::ui_framework::{Component, Input};
+use crate::user_config::UserConfig;
 use anyhow::{anyhow, Context, Error, Result};
 use crossterm::cursor;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
@@ -58,11 +59,15 @@ pub struct UI {
 }
 
 impl UI {
-    pub fn new(twitter_client: TwitterClient, twitter_user: &api::User) -> Self {
+    pub fn new(
+        twitter_client: TwitterClient,
+        twitter_user: &api::User,
+        user_config: &UserConfig,
+    ) -> Self {
         let (cols, rows) = terminal::size().unwrap();
         let (events_tx, events_rx) = mpsc::unbounded_channel();
 
-        let store = Arc::new(Store::new(twitter_client, twitter_user));
+        let store = Arc::new(Store::new(twitter_client, twitter_user, user_config));
 
         let feed_pane = FeedPane::new(&events_tx, &store);
         let bottom_bar = BottomBar::new(&store);

@@ -1,8 +1,16 @@
 # Scratchpad
 
-Every component should handle it's own render invalidation.
-Implementers should be careful not to "always re-render".
-Cursor always rechecked and moved if UI detects it moved.
+MVP: filter-by starred accounts
+immediate implications:
+- filter-by and search-for
+- star/unstar
+- show starred
+- implement RT/QT display
+
+maybe fix the alt-mode bug and make login easier
+
+Then mint a 0.1 and organize this TODO list, add some doc on how to clean-up what's not cleaned up
+Cleanup TODOs and CRs and warnings
 
 # TODO
 

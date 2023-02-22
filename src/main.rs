@@ -1,9 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 use dotenvy::dotenv;
-use std::env;
+use std::{env, fs, io};
 use twitter_tool_rs::twitter_client::TwitterClient;
 use twitter_tool_rs::ui;
+use twitter_tool_rs::user_config::UserConfig;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -32,7 +33,13 @@ async fn main() -> Result<()> {
     let me = twitter_client.me().await?;
     println!("{me:?}");
 
-    let mut ui = ui::UI::new(twitter_client, &me);
+    let user_config = match fs::read_to_string("./var/.user_config") {
+        Ok(file_contents) => serde_json::from_str::<UserConfig>(&file_contents)?,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => UserConfig::default(),
+        Err(err) => panic!("Error reading user config: {:?}", err),
+    };
+
+    let mut ui = ui::UI::new(twitter_client, &me, &user_config);
     ui.initialize();
     ui.event_loop().await
 }
