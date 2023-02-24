@@ -290,6 +290,10 @@ impl Render for TweetPane {
             || self.scroll_buffer.should_render()
     }
 
+    fn invalidate(&mut self) {
+        self.scroll_buffer.invalidate();
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let BoundingBox {
             left,

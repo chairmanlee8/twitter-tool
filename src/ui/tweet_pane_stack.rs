@@ -73,6 +73,10 @@ impl Render for TweetPaneStack {
         todo!()
     }
 
+    fn invalidate(&mut self) {
+        todo!()
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let BoundingBox {
             left,

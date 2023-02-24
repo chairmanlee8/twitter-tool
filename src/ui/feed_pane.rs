@@ -224,6 +224,13 @@ impl Render for FeedPane {
             || self.should_render
     }
 
+    fn invalidate(&mut self) {
+        self.scroll_buffer.invalidate();
+        self.tweet_pane.component.invalidate();
+        self.search_bar.component.invalidate();
+        self.should_render = true;
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         // CR-someday: does using SeqCst have a performance impact?  Frankly, we already use Mutex
         // in the render loop, so I'm not sure it matters.

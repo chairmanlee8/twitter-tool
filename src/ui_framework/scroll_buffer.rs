@@ -86,6 +86,10 @@ impl Render for ScrollBuffer {
         self.should_render
     }
 
+    fn invalidate(&mut self) {
+        self.should_render = true;
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         if bounding_box != self.last_bounding_box {
             self.last_bounding_box = bounding_box;

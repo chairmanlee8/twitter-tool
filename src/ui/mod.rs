@@ -10,7 +10,7 @@ use crate::ui::bottom_bar::BottomBar;
 use crate::ui::feed_pane::FeedPane;
 use crate::ui::tweet_pane::TweetPane;
 use crate::ui_framework::bounding_box::BoundingBox;
-use crate::ui_framework::{Component, Input};
+use crate::ui_framework::{Component, Input, Render};
 use crate::user_config::UserConfig;
 use anyhow::{anyhow, Context, Error, Result};
 use crossterm::cursor;
@@ -167,7 +167,11 @@ impl UI {
                 let handled = self.feed_pane.component.handle_key_event(key_event);
                 if !handled {
                     match key_event.code {
-                        KeyCode::Esc => self.set_mode(Mode::Interactive).unwrap(),
+                        KeyCode::Esc => {
+                            self.set_mode(Mode::Interactive).unwrap();
+                            self.feed_pane.component.invalidate();
+                            self.bottom_bar.component.invalidate();
+                        }
                         KeyCode::Char('q') => {
                             reset();
                             process::exit(0);

@@ -11,6 +11,10 @@ pub trait Render {
     // hand.  Maybe think a bit harder about how to make this more foolproof.
     fn should_render(&self) -> bool;
 
+    // CR: need to rethink architecture, maybe we want to do internal events after all and just
+    // think about what kind of latency guarantees are possible
+    fn invalidate(&mut self);
+
     /// NB: [render] takes [&mut self] since there isn't a separate notification to component that
     /// their bbox changed.
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()>;

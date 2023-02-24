@@ -67,6 +67,10 @@ impl Render for SearchBar {
         self.should_render
     }
 
+    fn invalidate(&mut self) {
+        self.should_render = true;
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let BoundingBox { left, top, .. } = bounding_box;
 

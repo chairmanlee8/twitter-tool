@@ -34,6 +34,10 @@ impl Render for BottomBar {
         self.should_render
     }
 
+    fn invalidate(&mut self) {
+        self.should_render = true;
+    }
+
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
         let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
         let feed_length = tweets_reverse_chronological.len();

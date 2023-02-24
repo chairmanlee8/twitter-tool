@@ -6,6 +6,7 @@ immediate implications:
 - star/unstar
 - show starred
 - implement RT/QT display
+- timezone shift to local
 
 maybe fix the alt-mode bug and make login easier
 
