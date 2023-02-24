@@ -75,7 +75,7 @@ impl Render for SearchBar {
         let BoundingBox { left, top, .. } = bounding_box;
 
         queue!(stdout, cursor::MoveTo(left, top))?;
-        queue!(stdout, style::Print("> "))?;
+        queue!(stdout, style::Print("/ "))?;
 
         // CR-soon: search bar horizontal scrolling
         let str_clear = " ".repeat(bounding_box.width.saturating_sub(2) as usize);

@@ -13,6 +13,7 @@ use regex::Regex;
 use std::io::{Stdout, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::{fs, process};
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -327,6 +328,25 @@ impl Input for FeedPane {
                         self.focus = Focus::SearchBar;
                         self.handle_focus();
                         self.should_render = true;
+                    }
+                    KeyCode::Char('*') => {
+                        {
+                            let user_config = self.store.user_config.lock().unwrap();
+                            let starred_accounts = user_config.starred_accounts.values();
+                            let out = starred_accounts
+                                .map(|user| format!("@{} [{}]", user.username, user.name))
+                                .collect::<Vec<String>>()
+                                .join("\n");
+                            // CR: okay, maybe handle the error here
+                            fs::write("/tmp/starred_accounts", out).unwrap();
+                        }
+
+                        // CR: also handle the errors here
+                        let mut subshell = process::Command::new("less")
+                            .args(["/tmp/starred_accounts"])
+                            .spawn()
+                            .unwrap();
+                        subshell.wait().unwrap();
                     }
                     _ => {
                         let handled = self.scroll_buffer.handle_key_event(event);
