@@ -57,7 +57,7 @@ impl Store {
         // NB: require page token if continuing to next page
         if !restart {
             let next_page_token = tweets_page_token.as_ref().ok_or(anyhow!("No more pages"))?;
-            maybe_page_token = Some(next_page_token);
+            maybe_page_token = Some(next_page_token.as_str());
         }
 
         let (new_tweets, page_token) = self
@@ -99,7 +99,7 @@ impl Store {
         // NB: require page token if continuing to next page
         if !restart {
             let next_page_token = tweets_page_token.as_ref().ok_or(anyhow!("No more pages"))?;
-            maybe_page_token = Some(next_page_token);
+            maybe_page_token = Some(next_page_token.as_str());
         }
 
         let (new_tweets, page_token) = self
