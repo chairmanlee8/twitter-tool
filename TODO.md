@@ -2,7 +2,8 @@
 
 MVP: filter-by starred accounts
 immediate implications:
-- search-for-user (done) and filter-by-starred
+- search-for-user (done) 
+- and filter-by-starred
 - star/unstar (done)
 - show starred (done)
 - implement RT/QT display
