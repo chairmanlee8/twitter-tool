@@ -21,6 +21,7 @@ Cleanup TODOs and CRs and warnings
 
 # TODO
 
+- consider tui-rs
 - figure out how to highlight only accounts w/ notifs on (or seed such a list)
 - show threads as [n]
 - consider moving to GUI already? or maybe see how far unicode gfx can go

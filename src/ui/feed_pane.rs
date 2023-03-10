@@ -60,7 +60,7 @@ impl FeedPane {
     pub fn get_selected_tweet_id(&self) -> Option<String> {
         let line_no = self.scroll_buffer.get_cursor_line();
         {
-            let feed = self.store.tweets_reverse_chronological.lock().unwrap();
+            let feed = self.store.tweets_feed.lock().unwrap();
             if let Some(tweet_id) = feed.get(line_no as usize) {
                 return Some(tweet_id.clone());
             }
@@ -72,7 +72,7 @@ impl FeedPane {
         self.scroll_buffer.clear();
 
         let tweets = self.store.tweets.lock().unwrap();
-        let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
+        let tweets_reverse_chronological = self.store.tweets_feed.lock().unwrap();
         let user_config = self.store.user_config.lock().unwrap();
 
         let re_newlines = Regex::new(r"[\r\n]+").unwrap();

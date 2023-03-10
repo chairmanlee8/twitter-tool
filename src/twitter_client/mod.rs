@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs;
 use url::Url;
 
-type PagedResult<T> = Result<(T, Option<String>)>;
+pub type PagedResult<T> = Result<(T, Option<String>)>;
 
 #[derive(Debug, Clone)]
 pub struct TwitterClient {
@@ -144,7 +144,7 @@ impl TwitterClient {
     async fn get_tweets_with_users(
         &self,
         uri: &mut Url,
-        pagination_token: Option<&str>,
+        pagination_token: Option<String>,
     ) -> PagedResult<Vec<api::Tweet>> {
         uri.query_pairs_mut()
             .append_pair(
@@ -156,7 +156,7 @@ impl TwitterClient {
             .append_pair("max_results", "100");
         if let Some(pagination_token) = pagination_token {
             uri.query_pairs_mut()
-                .append_pair("pagination_token", pagination_token);
+                .append_pair("pagination_token", &pagination_token);
         }
         let bytes = self.authenticated_get(&uri).await?;
 
@@ -190,7 +190,7 @@ impl TwitterClient {
     pub async fn user_tweets(
         &self,
         user_id: &str,
-        pagination_token: Option<&str>,
+        pagination_token: Option<String>,
     ) -> PagedResult<Vec<api::Tweet>> {
         let mut uri = Url::parse(&format!("https://api.twitter.com/2/users/{user_id}/tweets"))?;
         self.get_tweets_with_users(&mut uri, pagination_token).await
@@ -199,7 +199,7 @@ impl TwitterClient {
     pub async fn timeline_reverse_chronological(
         &self,
         user_id: &str,
-        pagination_token: Option<&str>,
+        pagination_token: Option<String>,
     ) -> PagedResult<Vec<api::Tweet>> {
         let mut uri = Url::parse(&format!(
             "https://api.twitter.com/2/users/{user_id}/timelines/reverse_chronological"

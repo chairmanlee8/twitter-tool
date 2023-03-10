@@ -39,7 +39,7 @@ impl Render for BottomBar {
     }
 
     fn render(&mut self, stdout: &mut Stdout, bounding_box: BoundingBox) -> Result<()> {
-        let tweets_reverse_chronological = self.store.tweets_reverse_chronological.lock().unwrap();
+        let tweets_reverse_chronological = self.store.tweets_feed.lock().unwrap();
         let feed_length = tweets_reverse_chronological.len();
 
         queue!(stdout, cursor::MoveTo(bounding_box.left, bounding_box.top))?;
