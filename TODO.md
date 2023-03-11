@@ -22,6 +22,10 @@ Options:
 - Package an entire sixel capable terminal emulator with (https://github.com/contour-terminal/contour)
 - Use some kind of electron+xtermjs <-> rust backend setup
 
+In either case, need to switch to an OAuth 2.0 flow, hopefully twitter supports.
+
+https://stackoverflow.com/questions/46616873/https-on-localhost-for-oauth-for-a-desktop-application
+
 # Issues
 
 - It's tricky to implement handle_key_event correctly; returning true/false all the way up
