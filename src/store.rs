@@ -1,6 +1,7 @@
 use crate::twitter_client::{api, PagedResult, TwitterClient};
 use crate::user_config::UserConfig;
 use anyhow::{anyhow, Context, Result};
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
@@ -10,6 +11,7 @@ use tokio::sync::Mutex as AsyncMutex;
 // NB: all the synchronization and interior mutability are encapsulated here for granularity.
 // Also it seems slightly nicer as an API?  Esp. since methods don't have to be &mut self.
 
+// CR: move Arc up
 #[derive(Debug)]
 pub struct Store {
     pub twitter_client: TwitterClient,
@@ -110,6 +112,17 @@ impl Store {
                 self.twitter_client
                     .user_tweets(user_id, maybe_page_token)
                     .await
+            },
+            restart,
+        )
+        .await
+    }
+
+    pub async fn load_search_tweets(&self, query: &str, restart: bool) -> Result<()> {
+        self.load_tweets_feed(
+            move |_maybe_page_token| {
+                let query = query.clone();
+                async move { self.twitter_client.search_tweets(&query).await }
             },
             restart,
         )

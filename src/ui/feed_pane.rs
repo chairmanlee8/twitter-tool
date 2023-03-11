@@ -209,6 +209,30 @@ impl FeedPane {
         }
     }
 
+    pub fn do_search_starred_accounts(&self, restart: bool) {
+        let user_config = self.store.user_config.lock().unwrap();
+        let query = user_config
+            .starred_accounts
+            .keys()
+            .map(|user_id| format!("from:{}", user_id))
+            .collect::<Vec<String>>()
+            .join(" OR ");
+        drop(user_config);
+
+        let events = self.events.clone();
+        let store = self.store.clone();
+        let should_update_scroll_buffer = self.should_update_scroll_buffer.clone();
+
+        let task = tokio::spawn(async move {
+            match store.load_search_tweets(&query, restart).await {
+                Ok(()) => should_update_scroll_buffer.store(true, Ordering::SeqCst),
+                Err(error) => events.send(InternalEvent::LogError(error)).unwrap(),
+            }
+        });
+
+        self.events.send(InternalEvent::RegisterTask(task)).unwrap();
+    }
+
     pub fn log_selected_tweet(&self) {
         self.events
             .send(InternalEvent::LogTweet(self.tweet_selected_id.clone()))
@@ -324,6 +348,7 @@ impl Input for FeedPane {
                     KeyCode::Char('n') => self.do_load_page_of_tweets(false),
                     KeyCode::Char('r') => self.do_load_page_of_tweets(true),
                     KeyCode::Char('s') => self.do_toggle_selected_tweet_starred(),
+                    KeyCode::Char('S') => self.do_search_starred_accounts(true),
                     KeyCode::Char('/') => {
                         self.focus = Focus::SearchBar;
                         self.handle_focus();
