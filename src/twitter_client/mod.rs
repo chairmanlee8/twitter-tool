@@ -3,9 +3,10 @@ pub mod api;
 use anyhow::{anyhow, Result};
 use hyper::body::Bytes;
 use hyper::client::HttpConnector;
-use hyper::{Body, Client, Method, Request};
+use hyper::server::conn::Http;
+use hyper::{Body, Client, Method, Request, Uri};
 use hyper_tls::HttpsConnector;
-use oauth2::basic::BasicClient;
+use oauth2::basic::{BasicClient, BasicTokenResponse};
 use oauth2::reqwest::async_http_client;
 use oauth2::{
     AccessToken, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
@@ -13,7 +14,10 @@ use oauth2::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
+use std::net::SocketAddr;
+use std::{fs, process};
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use url::Url;
 
 pub type PagedResult<T> = Result<(T, Option<String>)>;
@@ -76,32 +80,67 @@ impl TwitterClient {
             .url();
 
         // User browses here to complete OAuth flow
-        println!("Browse to: {auth_url}");
+        process::Command::new("open")
+            .arg(auth_url.to_string())
+            .output()
+            .expect(&format!("Failed to open url in browser: {auth_url}"));
 
         let mut callback_url = String::new();
         println!("Enter callback url:");
         std::io::stdin().read_line(&mut callback_url)?;
         let callback_url = Url::parse(&callback_url)?;
 
-        let mut expected_csrf_state = None;
-        let mut authorization_code = None;
+        // let (set_authorization_code, mut authorization_code) =
+        //     tokio::sync::mpsc::channel::<String>(1);
+        // let callback_addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+        // let callback_listener = TcpListener::bind(callback_addr).await?;
 
-        for (key, value) in callback_url.query_pairs() {
-            if key == "state" {
-                expected_csrf_state = Some(String::from(value));
-            } else if key == "code" {
-                authorization_code = Some(String::from(value));
+        fn parse_authorization_code(url: &Url) -> Result<String> {
+            let mut expected_csrf_state = None;
+            let mut authorization_code = None;
+            for (key, value) in url.query_pairs() {
+                if key == "state" {
+                    expected_csrf_state = Some(String::from(value));
+                } else if key == "code" {
+                    authorization_code = Some(String::from(value));
+                }
             }
+            let _expected_csrf_state =
+                expected_csrf_state.ok_or(anyhow!("Missing `state` param from callback"))?;
+            let authorization_code =
+                authorization_code.ok_or(anyhow!("Missing `code` param from callback"))?;
+
+            // Once the user has been redirected to the redirect URL, you'll have access to the
+            // authorization code. For security reasons, your code should verify that the `state`
+            // parameter returned by the server matches `csrf_state`.
+            Ok(authorization_code)
         }
 
-        let _expected_csrf_state =
-            expected_csrf_state.ok_or(anyhow!("Missing `state` param from callback"))?;
-        let authorization_code =
-            authorization_code.ok_or(anyhow!("Missing `code` param from callback"))?;
+        // tokio::task::spawn(async move {
+        //     loop {
+        //         let (stream, _) = callback_listener.accept().await.unwrap();
+        //         if let Err(err) = Http::new()
+        //             .serve_connection(
+        //                 stream,
+        //                 hyper::service::service_fn(|req| {
+        //                     let set_authorization_code = set_authorization_code.clone();
+        //                     async move {
+        //                         let authorization_code = parse_authorization_code(req.uri())?;
+        //                         set_authorization_code.send(authorization_code).await?;
+        //                         Ok::<_, anyhow::Error>(hyper::Response::new(hyper::Body::from(
+        //                             "You can close this window now",
+        //                         )))
+        //                     }
+        //                 }),
+        //             )
+        //             .await
+        //         {
+        //             eprintln!("Error serving callback: {}", err);
+        //         }
+        //     }
+        // });
 
-        // Once the user has been redirected to the redirect URL, you'll have access to the
-        // authorization code. For security reasons, your code should verify that the `state`
-        // parameter returned by the server matches `csrf_state`.
+        let authorization_code = parse_authorization_code(&callback_url)?;
         let token_result = oauth_client
             .exchange_code(AuthorizationCode::new(authorization_code))
             .set_pkce_verifier(pkce_verifier)

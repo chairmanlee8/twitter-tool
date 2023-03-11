@@ -8,6 +8,7 @@ immediate implications:
 - show starred (done)
 - implement RT/QT display
 - timezone shift to local
+- refresh token on login
 
 maybe fix the alt-mode bug and make login easier
 
