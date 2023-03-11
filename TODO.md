@@ -15,6 +15,13 @@ maybe fix the alt-mode bug and make login easier
 Then mint a 0.1 and organize this TODO list, add some doc on how to clean-up what's not cleaned up
 Cleanup TODOs and CRs and warnings
 
+# Packaging
+
+Options:
+
+- Package an entire sixel capable terminal emulator with (https://github.com/contour-terminal/contour)
+- Use some kind of electron+xtermjs <-> rust backend setup
+
 # Issues
 
 - It's tricky to implement handle_key_event correctly; returning true/false all the way up
@@ -23,6 +30,7 @@ Cleanup TODOs and CRs and warnings
 
 # TODO
 
+- view posting histogram for users when in feed view
 - consider tui-rs
 - figure out how to highlight only accounts w/ notifs on (or seed such a list)
 - show threads as [n]

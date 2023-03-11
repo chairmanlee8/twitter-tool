@@ -347,8 +347,8 @@ impl Input for FeedPane {
                     KeyCode::Char('i') => self.log_selected_tweet(),
                     KeyCode::Char('n') => self.do_load_page_of_tweets(false),
                     KeyCode::Char('r') => self.do_load_page_of_tweets(true),
-                    KeyCode::Char('s') => self.do_toggle_selected_tweet_starred(),
-                    KeyCode::Char('S') => self.do_search_starred_accounts(true),
+                    KeyCode::Char('S') => self.do_toggle_selected_tweet_starred(),
+                    KeyCode::Char('s') => self.do_search_starred_accounts(true),
                     KeyCode::Char('/') => {
                         self.focus = Focus::SearchBar;
                         self.handle_focus();
