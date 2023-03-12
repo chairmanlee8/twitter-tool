@@ -25,6 +25,8 @@ Options:
 In either case, need to switch to an OAuth 2.0 flow, hopefully twitter supports.
 
 https://stackoverflow.com/questions/46616873/https-on-localhost-for-oauth-for-a-desktop-application
+https://developer.twitter.com/en/docs/authentication/oauth-1-0a/pin-based-oauth
+https://dgu2000.medium.com/working-with-self-signed-certificates-in-chrome-walkthrough-edition-a238486e6858
 
 # Issues
 

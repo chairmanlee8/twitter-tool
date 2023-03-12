@@ -10,7 +10,7 @@ use oauth2::basic::{BasicClient, BasicTokenResponse};
 use oauth2::reqwest::async_http_client;
 use oauth2::{
     AccessToken, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
-    RedirectUrl, Scope, TokenResponse, TokenUrl,
+    RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -27,7 +27,13 @@ pub struct TwitterClient {
     https_client: Client<HttpsConnector<HttpConnector>>,
     twitter_client_id: String,
     twitter_client_secret: String,
+    twitter_auth: TwitterAuth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TwitterAuth {
     access_token: Option<AccessToken>,
+    refresh_token: Option<RefreshToken>,
 }
 
 impl TwitterClient {
@@ -38,29 +44,26 @@ impl TwitterClient {
             https_client,
             twitter_client_id: twitter_client_id.to_string(),
             twitter_client_secret: twitter_client_secret.to_string(),
-            access_token: None,
+            twitter_auth: TwitterAuth {
+                access_token: None,
+                refresh_token: None,
+            },
         }
     }
 
-    pub fn save_access_token(&self) -> Result<()> {
-        // CR-soon: do we have to use serde_json, what about plain bytes
-        let access_token = self
-            .access_token
-            .as_ref()
-            .ok_or(anyhow!("No token to save"))?;
-        let access_token = serde_json::to_string(&access_token)?;
-        fs::write("./var/.access_token", access_token)?;
+    pub fn save_auth(&self) -> Result<()> {
+        let str = serde_json::to_string(&self.twitter_auth)?;
+        fs::write("./var/.oauth", str)?;
         Ok(())
     }
 
-    pub fn load_access_token(&mut self) -> Result<()> {
-        let access_token = fs::read_to_string("./var/.access_token")?;
-        let access_token = serde_json::from_str(&access_token)?;
-        self.access_token = Some(access_token);
+    pub fn load_auth(&mut self) -> Result<()> {
+        let str = fs::read_to_string("./var/.oauth")?;
+        self.twitter_auth = serde_json::from_str(&str)?;
         Ok(())
     }
 
-    pub async fn authorize(&mut self) -> Result<()> {
+    pub async fn authorize(&mut self, use_refresh_token: bool) -> Result<()> {
         let oauth_client = BasicClient::new(
             ClientId::new(self.twitter_client_id.clone()),
             Some(ClientSecret::new(self.twitter_client_secret.clone())),
@@ -79,80 +82,97 @@ impl TwitterClient {
             .set_pkce_challenge(pkce_challenge)
             .url();
 
-        // User browses here to complete OAuth flow
-        process::Command::new("open")
-            .arg(auth_url.to_string())
-            .output()
-            .expect(&format!("Failed to open url in browser: {auth_url}"));
-
-        let mut callback_url = String::new();
-        println!("Enter callback url:");
-        std::io::stdin().read_line(&mut callback_url)?;
-        let callback_url = Url::parse(&callback_url)?;
-
-        // let (set_authorization_code, mut authorization_code) =
-        //     tokio::sync::mpsc::channel::<String>(1);
-        // let callback_addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-        // let callback_listener = TcpListener::bind(callback_addr).await?;
-
-        fn parse_authorization_code(url: &Url) -> Result<String> {
-            let mut expected_csrf_state = None;
-            let mut authorization_code = None;
-            for (key, value) in url.query_pairs() {
-                if key == "state" {
-                    expected_csrf_state = Some(String::from(value));
-                } else if key == "code" {
-                    authorization_code = Some(String::from(value));
-                }
+        match &self.twitter_auth.refresh_token {
+            Some(refresh_token) if use_refresh_token => {
+                let token = oauth_client
+                    .exchange_refresh_token(refresh_token)
+                    .request_async(async_http_client)
+                    .await?;
+                self.twitter_auth.access_token = Some(token.access_token().clone());
+                self.save_auth()?;
             }
-            let _expected_csrf_state =
-                expected_csrf_state.ok_or(anyhow!("Missing `state` param from callback"))?;
-            let authorization_code =
-                authorization_code.ok_or(anyhow!("Missing `code` param from callback"))?;
+            _ => {
+                // User browses here to complete OAuth flow
+                process::Command::new("open")
+                    .arg(auth_url.to_string())
+                    .output()
+                    .expect(&format!("Failed to open url in browser: {auth_url}"));
 
-            // Once the user has been redirected to the redirect URL, you'll have access to the
-            // authorization code. For security reasons, your code should verify that the `state`
-            // parameter returned by the server matches `csrf_state`.
-            Ok(authorization_code)
+                let mut callback_url = String::new();
+                println!("Enter callback url:");
+                std::io::stdin().read_line(&mut callback_url)?;
+                let callback_url = Url::parse(&callback_url)?;
+
+                // let (set_authorization_code, mut authorization_code) =
+                //     tokio::sync::mpsc::channel::<String>(1);
+                // let callback_addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+                // let callback_listener = TcpListener::bind(callback_addr).await?;
+
+                fn parse_authorization_code(url: &Url) -> Result<String> {
+                    let mut expected_csrf_state = None;
+                    let mut authorization_code = None;
+                    for (key, value) in url.query_pairs() {
+                        if key == "state" {
+                            expected_csrf_state = Some(String::from(value));
+                        } else if key == "code" {
+                            authorization_code = Some(String::from(value));
+                        }
+                    }
+                    let _expected_csrf_state = expected_csrf_state
+                        .ok_or(anyhow!("Missing `state` param from callback"))?;
+                    let authorization_code =
+                        authorization_code.ok_or(anyhow!("Missing `code` param from callback"))?;
+
+                    // Once the user has been redirected to the redirect URL, you'll have access to the
+                    // authorization code. For security reasons, your code should verify that the `state`
+                    // parameter returned by the server matches `csrf_state`.
+                    Ok(authorization_code)
+                }
+
+                // tokio::task::spawn(async move {
+                //     loop {
+                //         let (stream, _) = callback_listener.accept().await.unwrap();
+                //         if let Err(err) = Http::new()
+                //             .serve_connection(
+                //                 stream,
+                //                 hyper::service::service_fn(|req| {
+                //                     let set_authorization_code = set_authorization_code.clone();
+                //                     async move {
+                //                         let authorization_code = parse_authorization_code(req.uri())?;
+                //                         set_authorization_code.send(authorization_code).await?;
+                //                         Ok::<_, anyhow::Error>(hyper::Response::new(hyper::Body::from(
+                //                             "You can close this window now",
+                //                         )))
+                //                     }
+                //                 }),
+                //             )
+                //             .await
+                //         {
+                //             eprintln!("Error serving callback: {}", err);
+                //         }
+                //     }
+                // });
+
+                let authorization_code = parse_authorization_code(&callback_url)?;
+                let token_result = oauth_client
+                    .exchange_code(AuthorizationCode::new(authorization_code))
+                    .set_pkce_verifier(pkce_verifier)
+                    .request_async(async_http_client)
+                    .await?;
+
+                self.twitter_auth.access_token = Some(token_result.access_token().clone());
+                self.twitter_auth.refresh_token = token_result.refresh_token().cloned();
+            }
         }
-
-        // tokio::task::spawn(async move {
-        //     loop {
-        //         let (stream, _) = callback_listener.accept().await.unwrap();
-        //         if let Err(err) = Http::new()
-        //             .serve_connection(
-        //                 stream,
-        //                 hyper::service::service_fn(|req| {
-        //                     let set_authorization_code = set_authorization_code.clone();
-        //                     async move {
-        //                         let authorization_code = parse_authorization_code(req.uri())?;
-        //                         set_authorization_code.send(authorization_code).await?;
-        //                         Ok::<_, anyhow::Error>(hyper::Response::new(hyper::Body::from(
-        //                             "You can close this window now",
-        //                         )))
-        //                     }
-        //                 }),
-        //             )
-        //             .await
-        //         {
-        //             eprintln!("Error serving callback: {}", err);
-        //         }
-        //     }
-        // });
-
-        let authorization_code = parse_authorization_code(&callback_url)?;
-        let token_result = oauth_client
-            .exchange_code(AuthorizationCode::new(authorization_code))
-            .set_pkce_verifier(pkce_verifier)
-            .request_async(async_http_client)
-            .await?;
-
-        self.access_token = Some(token_result.access_token().clone());
         Ok(())
     }
 
     async fn authenticated_get(&self, uri: &Url) -> Result<Bytes> {
-        let access_token = self.access_token.as_ref().ok_or(anyhow!("Unauthorized"))?;
+        let access_token = self
+            .twitter_auth
+            .access_token
+            .as_ref()
+            .ok_or(anyhow!("Unauthorized"))?;
         let req = Request::builder()
             .method(Method::GET)
             .uri(uri.to_string())
