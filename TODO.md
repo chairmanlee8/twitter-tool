@@ -7,8 +7,8 @@ immediate implications:
 - star/unstar (done)
 - show starred (done)
 - implement RT/QT display
-- timezone shift to local
-- refresh token on login
+- timezone shift to local (done)
+- refresh token on login (done)
 
 maybe fix the alt-mode bug and make login easier
 
@@ -58,6 +58,7 @@ https://dgu2000.medium.com/working-with-self-signed-certificates-in-chrome-walkt
 - consider storing tweet ids as u64; at the very least, type alias the String
 - remove "as usize" casts these are unsafe?
 - test resize behavior
+- name change tracking (previously_seen_by)
 
 # Some Thoughts
 
