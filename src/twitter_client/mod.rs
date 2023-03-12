@@ -89,6 +89,7 @@ impl TwitterClient {
                     .request_async(async_http_client)
                     .await?;
                 self.twitter_auth.access_token = Some(token.access_token().clone());
+                self.twitter_auth.refresh_token = token.refresh_token().cloned();
                 self.save_auth()?;
             }
             _ => {
