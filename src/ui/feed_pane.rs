@@ -238,6 +238,14 @@ impl FeedPane {
             .send(InternalEvent::LogTweet(self.tweet_selected_id.clone()))
             .unwrap();
     }
+    
+    pub fn do_open_selected_tweet(&self) {
+        // NB: lol... https://developer.twitter.com/en/blog/community/2020/getting-to-the-canonical-url-for-a-tweet
+        process::Command::new("open")
+            .arg(format!("https://twitter.com/t/status/{}", self.tweet_selected_id))
+            .output()
+            .expect(&format!("Failed to open tweet in browser"));
+    }
 }
 
 impl Render for FeedPane {
@@ -345,6 +353,7 @@ impl Input for FeedPane {
             _ => match self.focus {
                 Focus::FeedPane => match event.code {
                     KeyCode::Char('i') => self.log_selected_tweet(),
+                    KeyCode::Char('o') => self.do_open_selected_tweet(),
                     KeyCode::Char('n') => self.do_load_page_of_tweets(false),
                     KeyCode::Char('r') => self.do_load_page_of_tweets(true),
                     KeyCode::Char('S') => self.do_toggle_selected_tweet_starred(),
