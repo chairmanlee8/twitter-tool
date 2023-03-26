@@ -11,6 +11,17 @@ For 0.2:
 - Choose an approach to TUI: notcurses? iced? tui-rs?
 - QT/RT display
 - Images and video display
+- Help screen/controls discoverability
+- Notes
+- Lists (of which starred is just one kind); sync with twitter lists?
+
+For 0.3:
+
+- Check feasibility of extracting tickers (not just $-tagged, e.g. bitty -> BTC)
+- Automated suggestion of ticker price annotations
+- Show ticker price chart vs tweets display; have to think about how to present/layout this information
+- Most RT-ed/QT-ed/replied in last window
+- Show engagement stats
 
 # Packaging
 
