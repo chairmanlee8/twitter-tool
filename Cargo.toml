@@ -1,6 +1,14 @@
 [package]
-name = "twitter-tool-rs"
+name = "twitter-tool"
 version = "0.1.0"
+authors = ["Andrew Lee"]
+license = "Apache-2.0"
+description = "A command line tool for interacting with Twitter"
+readme = "README.md"
+homepage = "https://github.com/chairmanlee8/twitter-tool"
+repository = "https://github.com/chairmanlee8/twitter-tool"
+keywords = ["cli", "tui", "twitter"]
+categories = ["command-line-utilities"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

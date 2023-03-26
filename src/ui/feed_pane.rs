@@ -238,11 +238,14 @@ impl FeedPane {
             .send(InternalEvent::LogTweet(self.tweet_selected_id.clone()))
             .unwrap();
     }
-    
+
     pub fn do_open_selected_tweet(&self) {
         // NB: lol... https://developer.twitter.com/en/blog/community/2020/getting-to-the-canonical-url-for-a-tweet
         process::Command::new("open")
-            .arg(format!("https://twitter.com/t/status/{}", self.tweet_selected_id))
+            .arg(format!(
+                "https://twitter.com/t/status/{}",
+                self.tweet_selected_id
+            ))
             .output()
             .expect(&format!("Failed to open tweet in browser"));
     }
