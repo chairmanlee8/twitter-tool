@@ -1,11 +1,9 @@
+use twitter_tool::{twitter_client::TwitterClient, user_config::UserConfig, ui};
 use anyhow::Result;
 use clap::Parser;
 use dotenvy::dotenv;
 use std::convert::Infallible;
 use std::{env, fs, io};
-use twitter_tool_rs::twitter_client::TwitterClient;
-use twitter_tool_rs::ui;
-use twitter_tool_rs::user_config::UserConfig;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
