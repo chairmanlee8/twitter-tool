@@ -1,19 +1,16 @@
 # Scratchpad
 
-MVP: filter-by starred accounts
-immediate implications:
-- search-for-user (done) 
-- and filter-by-starred (done)
-- star/unstar (done)
-- show starred (done)
-- implement RT/QT display
-- timezone shift to local (done)
-- refresh token on login (done)
+For 0.1.1:
 
-maybe fix the alt-mode bug and make login easier
+- Change env file to config file, display instructions on start up if config not found
+- Don't store things in "var/", pick a real location, probably same as config
+- Fix warnings, remove TODOs, fix or upgrade CRs
 
-Then mint a 0.1 and organize this TODO list, add some doc on how to clean-up what's not cleaned up
-Cleanup TODOs and CRs and warnings
+For 0.2:
+
+- Choose an approach to TUI: notcurses? iced? tui-rs?
+- QT/RT display
+- Images and video display
 
 # Packaging
 
